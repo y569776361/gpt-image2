@@ -1,242 +1,340 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 安全文生图网关系统</title>
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-    <style>
-        .loading-spinner {
-            border: 4px solid rgba(0, 0, 0, 0.1);
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            border-left-color: #09f;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    </style>
-</head>
-<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col justify-between">
+import os
+import time
+import urllib.parse
+import urllib.request
+import ssl  # 🌟 用于规避第三方 HTTPS 证书校验
+import json
+import uuid
+from typing import Optional
+from urllib.parse import urlparse
+from fastapi import FastAPI, Header, HTTPException, Request, Depends, status
+from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from obs import ObsClient
 
-    <header class="bg-white shadow-sm border-b border-slate-200 py-4 px-6">
-        <div class="max-w-6xl mx-auto flex justify-between items-center">
-            <h1 class="text-xl font-bold text-indigo-600 flex items-center gap-2">
-                <span>🎨</span> GPT-Image2 文生图安全客户端
-            </h1>
-            <span class="text-xs bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-full font-medium">网关安全保护中</span>
-        </div>
-    </header>
+app = FastAPI()
 
-    <main class="max-w-6xl mx-auto my-8 px-4 w-full grid grid-cols-1 md:grid-cols-12 gap-8 flex-grow">
+# 全局 CORS 配置：确保前端跨域请求及 OPTIONS 预检请求顺利通过
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],          
+    allow_credentials=True,
+    allow_methods=["*"],          
+    allow_headers=["*"],          
+    expose_headers=["*"],        
+)
+
+# ==================== 📡 环境变量读取与清洗 ====================
+OBS_ENDPOINT = os.environ.get("OBS_ENDPOINT", "").strip()
+OBS_BUCKET = os.environ.get("OBS_BUCKET", "").strip()
+OBS_AK = (os.environ.get("OBS_ACCESS_KEY_ID") or os.environ.get("OBS_ACCESS_KEY", "")).strip()
+OBS_SK = os.environ.get("OBS_SECRET_ACCESS_KEY", "").strip()
+
+raw_domain = os.environ.get("OBS_DOMAIN", "").strip().rstrip("/")
+if raw_domain and not raw_domain.startswith(("http://", "https://")):
+    OBS_EXTERNAL_DOMAIN = f"https://{raw_domain}"
+else:
+    OBS_EXTERNAL_DOMAIN = raw_domain
+
+AI_APP_SECRET = os.environ.get("AI_APP_SECRET", "").strip()
+CREATE_TASK_URL = os.environ.get("REAL_API_URL", "").strip()
+QUERY_TASK_URL_TEMPLATE = "https://open-power.tec-do.cn/aigc/openapi/result/v1/workflow_task/{}"
+
+# 🌟 gpt-image2 文生图对应的真实第三方 API 地址
+IMAGE2_CREATE_URL = "https://open-power.tec-do.cn/tecpower/ai/openapi/image/create"
+IMAGE2_QUERY_URL_TEMPLATE = "https://open-power.tec-do.cn/tecpower/ai/openapi/image/task?taskId={}"
+
+VALID_TOKENS = ["GFCAD_Secure_2026", "admin123456"]
+
+def verify_gateway_token(x_gateway_token: Optional[str] = Header(None, alias="X-Gateway-Token")):
+    if not x_gateway_token:
+        raise HTTPException(status_code=401, detail="网关拦截：未检测到安全密钥")
+    if x_gateway_token not in VALID_TOKENS:
+        raise HTTPException(status_code=403, detail="网关拦截：密钥无效")
+    return x_gateway_token
+
+# 初始化华为云 OBS 客户端
+obs_client = ObsClient(
+    access_key_id=OBS_AK,
+    secret_access_key=OBS_SK,
+    server=OBS_ENDPOINT if OBS_ENDPOINT.startswith("http") else f"https://{OBS_ENDPOINT}"
+)
+
+
+# ==================== 场景 1：图片托管回显 (GET /) ====================
+@app.get("/")
+async def download_file(file: str = None, _token: str = Depends(verify_gateway_token)):
+    if not file:
+        return JSONResponse(status_code=400, content={"error": "Missing 'file' parameter"})
+    try:
+        resp = obs_client.getObject(OBS_BUCKET, file, loadStreamInMemory=False)
+        if resp.status < 300:
+            def iter_file():
+                chunk = resp.body.response.read(64 * 1024)
+                while chunk:
+                    yield chunk
+                    chunk = resp.body.response.read(64 * 1024)
+            return StreamingResponse(iter_file(), media_type="image/png")
+        return JSONResponse(status_code=404, content={"error": f"OBS error: {resp.errorMessage}"})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+# ==================== 场景 2：二进制图片上传 (POST /) ====================
+@app.post("/")
+async def upload_file(
+    request: Request,
+    file_name: str = Header(None, alias="X-File-Name"),
+    _token: str = Depends(verify_gateway_token)
+):
+    orig_file_name = urllib.parse.unquote(file_name) if file_name else "unnamed_file.png"
+    _, ext = os.path.splitext(orig_file_name)
+    if not ext:
+        ext = ".png"
         
-        <section class="md:col-span-5 bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col gap-5">
-            <h2 class="text-lg font-semibold text-slate-700 border-b pb-2">配置与控制</h2>
-            
-            <div class="bg-slate-50 p-4 rounded-xl border border-slate-200/60 flex flex-col gap-3">
-                <div>
-                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">网关 HTTP 触发器基地址</label>
-                    <input id="gatewayUrl" type="text" value="http://127.0.0.1:9000" placeholder="例如: https://your-gateway.com" class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500">
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">合法内置 Token 令牌</label>
-                    <input id="gatewayToken" type="password" value="GFCAD_Secure_2026" placeholder="请输入 X-Gateway-Token" class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500">
-                </div>
-            </div>
-
-            <div class="flex flex-col gap-4">
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">提示词 (Prompt)</label>
-                    <textarea id="prompt" rows="4" placeholder="一只赛博朋克风格的柴犬，霓虹灯背景，8K 超高清..." class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500">一只赛博朋克风格的柴犬，霓虹灯背景，8K 超高清</textarea>
-                </div>
-                
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">分辨率尺寸</label>
-                        <select id="size" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:border-indigo-500">
-                            <option value="1024x1024">1024 x 1024</option>
-                            <option value="2048x2048" selected>2048 x 2048</option>
-                            <option value="3072x3072">3072 x 3072</option>
-                        </select>
-                    </div>
-                    <div class="flex items-center pt-6 pl-2">
-                        <input id="watermark" type="checkbox" class="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500">
-                        <label for="watermark" class="ml-2 text-sm font-medium text-slate-700 select-none">开启官方水印</label>
-                    </div>
-                </div>
-
-                <button id="generateBtn" onclick="startGeneration()" class="w-full mt-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-lg shadow-sm transition duration-150 active:scale-[0.98]">
-                    🚀 开始生成图片
-                </button>
-            </div>
-        </section>
-
-        <section class="md:col-span-7 bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col min-h-[400px]">
-            <h2 class="text-lg font-semibold text-slate-700 border-b pb-2 mb-4">生成结果看板</h2>
-            
-            <div class="flex-grow flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-xl bg-slate-50 p-4 relative overflow-hidden" id="displayContainer">
-                
-                <div id="statusEmpty" class="text-center flex flex-col items-center gap-2">
-                    <span class="text-4xl">🖼️</span>
-                    <p class="text-slate-400 text-sm">暂无任务，请在左侧配置并点击生成按钮</p>
-                </div>
-
-                <div id="statusLoading" class="hidden text-center flex flex-col items-center gap-4">
-                    <div class="loading-spinner"></div>
-                    <div>
-                        <p class="text-indigo-600 font-medium text-sm">网关已成功向云端投递任务...</p>
-                        <p id="taskIdDisplay" class="text-xs text-slate-400 mt-1 font-mono"></p>
-                        <p id="timerDisplay" class="text-xs text-amber-600 mt-2 font-medium bg-amber-50 px-2 py-0.5 rounded border border-amber-200 inline-block">已耗时: 0s (安全转存同步中)</p>
-                    </div>
-                </div>
-
-                <div id="statusSuccess" class="hidden w-full h-full flex flex-col items-center justify-between gap-4">
-                    <div class="w-full max-h-[450px] overflow-hidden rounded-lg shadow-inner bg-black flex items-center justify-center">
-                        <img id="resultImage" src="" alt="AI Result" class="max-w-full max-h-[450px] object-contain opacity-0 transition-opacity duration-500">
-                    </div>
-                    <div class="w-full bg-slate-100 p-3 rounded-lg text-xs font-mono text-slate-600 space-y-1">
-                        <p class="truncate"><strong class="text-slate-700">安全重写直链:</strong> <a id="metaUrl" href="#" target="_blank" class="text-indigo-600 hover:underline"></a></p>
-                        <div class="grid grid-cols-2 gap-2 pt-1 border-t border-slate-200 mt-1 text-slate-500">
-                            <p><strong>实际扣费:</strong> <span id="metaAmount"></span></p>
-                            <p><strong>最终尺寸:</strong> <span id="metaSize"></span></p>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-        </section>
-    </main>
-
-    <footer class="bg-white border-t border-slate-200 py-3 text-center text-xs text-slate-400 font-mono">
-        &copy; 2026 API Gateway Hub. All info is fully dynamic and securely proxied.
-    </footer>
-
-    <script>
-        let pollingTimer = null;
-        let elapsedSeconds = 0;
-        let elapsedTimer = null;
-
-        // UI 视图切换管理器
-        function switchView(viewName) {
-            document.getElementById('statusEmpty').classList.add('hidden');
-            document.getElementById('statusLoading').classList.add('hidden');
-            document.getElementById('statusSuccess').classList.add('hidden');
-            
-            if(viewName === 'empty') document.getElementById('statusEmpty').classList.remove('hidden');
-            if(viewName === 'loading') document.getElementById('statusLoading').classList.remove('hidden');
-            if(viewName === 'success') document.getElementById('statusSuccess').classList.remove('hidden');
-        }
-
-        // 步骤 1：触发文生图任务
-        async function startGeneration() {
-            const baseUrl = document.getElementById('gatewayUrl').value.trim().replace(/\/$/, "");
-            const token = document.getElementById('gatewayToken').value.trim();
-            const prompt = document.getElementById('prompt').value.trim();
-            const size = document.getElementById('size').value;
-            const watermark = document.getElementById('watermark').checked;
-
-            if(!baseUrl || !token || !prompt) {
-                alert('⚠️ 错误：请完整填写网关基地址、Token 以及生成提示词！');
-                return;
+    current_date_dir = time.strftime("%Y%m%d")
+    unique_id = str(uuid.uuid4())
+    obs_object_key = f"{current_date_dir}/{unique_id}{ext}"
+    
+    try:
+        file_data = await request.body()
+        safe_orig_name = urllib.parse.quote(orig_file_name)
+        metadata = { "original-name": safe_orig_name }
+        
+        resp = obs_client.putContent(
+            OBS_BUCKET,
+            obs_object_key,
+            content=file_data,
+            metadata=metadata
+        )
+        
+        if resp.status < 300:
+            direct_url = f"{OBS_EXTERNAL_DOMAIN}/{obs_object_key}" if OBS_EXTERNAL_DOMAIN else None
+            return {
+                "success": True,
+                "filename": obs_object_key,          
+                "original_name": orig_file_name,    
+                "direct_url": direct_url            
             }
+        return JSONResponse(status_code=500, content={"error": resp.errorMessage})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
-            // 重置并启动计时器
-            clearInterval(elapsedTimer);
-            elapsedSeconds = 0;
-            document.getElementById('timerDisplay').innerText = `已耗时: 0s (安全转存同步中)`;
-            elapsedTimer = setInterval(() => {
-                elapsedSeconds++;
-                document.getElementById('timerDisplay').innerText = `已耗时: ${elapsedSeconds}s (安全转存同步中)`;
-            }, 1000);
 
-            switchView('loading');
-            document.getElementById('generateBtn').disabled = true;
-            document.getElementById('generateBtn').innerText = '⏳ 正在排队调度...';
+# ==================== 场景 3：AI 图生图任务安全中转 (POST) ====================
+@app.post("/api/image-to-image")
+@app.post("/image-to-image")  # 🌟 路由双绑定：防止 FC 网关层剥离前缀
+async def forward_ai_task(request: Request, _token: str = Depends(verify_gateway_token)):
+    if not OBS_EXTERNAL_DOMAIN:
+        return JSONResponse(status_code=500, content={"error": "云端未检测到有效的 OBS_DOMAIN"})
+    try:
+        payload = await request.json()
+        user_inputs = payload.get("inputs", {})
+        image_urls = user_inputs.get("image_urls", [])
+        
+        if image_urls:
+            raw_url = image_urls[0]
+            if "file=" in raw_url:
+                raw_file_ref = raw_url.split("file=")[-1]
+            else:
+                parsed_url = urlparse(raw_url)
+                raw_file_ref = parsed_url.path.lstrip("/")
 
-            try {
-                // 请求网关的场景 5 接口
-                const response = await fetch(`${baseUrl}/image/create`, { ... });
+            corrected_url = f"{OBS_EXTERNAL_DOMAIN}/{raw_file_ref}"
+            payload["inputs"]["image_urls"] = [corrected_url]
 
-                const result = await response.json();
+        req_data = json.dumps(payload).encode('utf-8')
+        req = urllib.request.Request(
+            CREATE_TASK_URL,
+            data=req_data,
+            headers={"X-App-Secret": AI_APP_SECRET, "Content-Type": "application/json"},
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=30) as response:
+            return JSONResponse(status_code=response.status, content=json.loads(response.read().decode('utf-8')))
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"网关调度失败: {str(e)}"})
+
+
+# ==================== 场景 4：图生图安全轮询探测并强力转存 (GET) ====================
+@app.get("/api/query-task/{task_id}")
+@app.get("/query-task/{task_id}")  # 🌟 路由双绑定
+async def query_ai_task(task_id: str, _token: str = Depends(verify_gateway_token)):
+    try:
+        req = urllib.request.Request(
+            QUERY_TASK_URL_TEMPLATE.format(task_id),
+            headers={"X-App-Secret": AI_APP_SECRET, "Content-Type": "application/json"},
+            method="GET"
+        )
+        with urllib.request.urlopen(req, timeout=20) as response:
+            raw_body = response.read().decode('utf-8')
+            q_data = json.loads(raw_body)
+            
+            target_data = q_data.get("data", q_data)
+            current_status = str(target_data.get("status", "")).lower()
+            
+            if current_status in ["success", "completed", "done", "finished"]:
+                ai_img_url = target_data.get("image_url")
+                if not ai_img_url and "outputs" in target_data:
+                    try:
+                        materials = target_data["outputs"].get("materials", [])
+                        if materials and isinstance(materials, list):
+                            ai_img_url = materials[0].get("image_url")
+                    except Exception as e:
+                        print(f"[提取报错] 解析outputs节点失败: {e}")
+
+                user_inputs = target_data.get("inputs", {})
+                image_urls = user_inputs.get("image_urls", [])
                 
-                if (response.ok && result.data && result.data.taskId) {
-                    const taskId = result.data.taskId;
-                    document.getElementById('taskIdDisplay').innerText = `Task ID: ${taskId}`;
-                    // 进入步骤 2：启动安全轮询探测
-                    startPolling(baseUrl, token, taskId);
-                } else {
-                    throw new Error(result.error || result.detail || '网关拒绝服务');
-                }
-            } catch (err) {
-                alert(`💥 发起失败: ${err.message}`);
-                resetState();
-            }
-        }
-
-        // 步骤 2：网关安全轮询探测
-        function startPolling(baseUrl, token, taskId) {
-            // 每隔 3 秒去网关刷一次状态
-            pollingTimer = setInterval(async () => {
-                try {
-                    // 请求网关的场景 6 接口
-                    const response = await fetch(`${baseUrl}/api/image/task?taskId=${taskId}`, {
-                        method: 'GET',
-                        headers: {
-                            'X-Gateway-Token': token
-                        }
-                    });
-
-                    if (!response.ok) return; // 如果发生4xx/5xx网关抖动，忽略，等待下一次轮询
-
-                    const result = await response.json();
-                    const targetData = result.data || result;
-                    const status = String(targetData.status).toLowerCase();
-
-                    // 探测是否落盘成功且完成
-                    if (status === 'completed' || status === 'success') {
-                        clearInterval(pollingTimer);
-                        clearInterval(elapsedTimer);
+                if ai_img_url and image_urls and not str(ai_img_url).startswith(OBS_EXTERNAL_DOMAIN):
+                    ref_url_path = urlparse(image_urls[0]).path.lstrip("/")
+                    ref_dir = os.path.dirname(ref_url_path)
+                    ref_file = os.path.basename(ref_url_path)
+                    ref_name, _ = os.path.splitext(ref_file)
+                    
+                    obs_object_key = f"{ref_dir}/{ref_name}-outputs.png" if ref_dir else f"{ref_name}-outputs.png"
+                    
+                    try:
+                        ssl_context = ssl._create_unverified_context()
+                        with urllib.request.urlopen(ai_img_url, timeout=15, context=ssl_context) as img_res:
+                            img_bytes = img_res.read()
                         
-                        if (targetData.images && targetData.images.length > 0) {
-                            const rewriteUrl = targetData.images[0].url;
+                        obs_resp = obs_client.putContent(
+                            OBS_BUCKET,
+                            obs_object_key,
+                            content=img_bytes,
+                            metadata={"original-name": f"{ref_name}-outputs.png"}
+                        )
+                        
+                        if obs_resp.status < 300:
+                            corrected_output_url = f"{OBS_EXTERNAL_DOMAIN}/{obs_object_key}"
+                            print(f"🎉【转存成功】已成功将结果上传至 OBS: {obs_object_key}")
+                            target_data["image_url"] = corrected_output_url
+                            if "outputs" in target_data and "materials" in target_data["outputs"]:
+                                try:
+                                    target_data["outputs"]["materials"][0]["image_url"] = corrected_output_url
+                                except:
+                                    pass
+                        else:
+                            print(f"❌【OBS拒绝】华为云拒绝了写入请求: {obs_resp.errorMessage}")
+                                
+                    except Exception as upload_err:
+                        print(f"💥【转存链路崩溃】具体报错原因: {str(upload_err)}")
+           
+            if current_status in ["success", "completed", "done", "finished"]:
+                q_data["status"] = "completed"
+                target_data["status"] = "completed"
+
+            return JSONResponse(status_code=response.status, content=q_data)
+            
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+# ==================== 🌟 场景 5：gpt-image2 文生图安全投递 (POST) ====================
+@app.post("/api/image/create")
+@app.post("/image/create")  # 🌟 路由双绑定：完美解决阿里云 FC 报 404 Not Found 的问题
+async def create_image2_task(request: Request, _token: str = Depends(verify_gateway_token)):
+    try:
+        # 接收并原样打包前端发来的轻量级参数 (prompt, size, watermark)
+        payload = await request.json()
+        req_data = json.dumps(payload).encode('utf-8')
+        
+        # 自动向第三方上游注入真实的 X-App-Secret 安全密钥
+        req = urllib.request.Request(
+            IMAGE2_CREATE_URL,
+            data=req_data,
+            headers={"X-App-Secret": AI_APP_SECRET, "Content-Type": "application/json"},
+            method="POST"
+        )
+        
+        with urllib.request.urlopen(req, timeout=30) as response:
+            res_body = json.loads(response.read().decode('utf-8'))
+            return JSONResponse(status_code=response.status, content=res_body)
+            
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"文生图任务发起失败: {str(e)}"})
+
+
+# ==================== 🌟 场景 6：gpt-image2 文生图安全轮询与落盘重写 (GET) ====================
+@app.get("/api/image/task")
+@app.get("/image/task")  # 🌟 路由双绑定：确保前端传入各种基地址均能命中
+async def query_image2_task(taskId: str, _token: str = Depends(verify_gateway_token)):
+    if not OBS_EXTERNAL_DOMAIN:
+        return JSONResponse(status_code=500, content={"error": "云端未检测到有效的 OBS_DOMAIN"})
+    try:
+        # 向第三方服务发起真实的状态查询请求
+        req = urllib.request.Request(
+            IMAGE2_QUERY_URL_TEMPLATE.format(taskId),
+            headers={"X-App-Secret": AI_APP_SECRET, "Content-Type": "application/json"},
+            method="GET"
+        )
+        
+        with urllib.request.urlopen(req, timeout=20) as response:
+            raw_body = response.read().decode('utf-8')
+            q_data = json.loads(raw_body)
+            
+            target_data = q_data.get("data", q_data)
+            current_status = str(target_data.get("status", "")).lower()
+            
+            # 检测是否属于成功态 (深度兼容 COMPLETED 和 completed)
+            if current_status in ["success", "completed", "done", "finished"]:
+                images = target_data.get("images", [])
+                
+                if images and isinstance(images, list):
+                    ai_img_url = images[0].get("url")
+                    
+                    # 仅当获取到了有效的第三方图，且还未转存至自建域名时执行转存
+                    if ai_img_url and not str(ai_img_url).startswith(OBS_EXTERNAL_DOMAIN):
+                        
+                        # 解析后缀，保持原图格式 (.jpg 或 .png)
+                        parsed_url = urlparse(ai_img_url)
+                        _, ext = os.path.splitext(parsed_url.path)
+                        if not ext:
+                            ext = ".jpg"
+                        
+                        # 文生图无需依赖用户原图，采用当天日期目录归档
+                        current_date_dir = time.strftime("%Y%m%d")
+                        obs_object_key = f"{current_date_dir}/{taskId}-outputs{ext}"
+                        
+                        try:
+                            # 绕过三方可能存在的 HTTPS 证书过期/校验失败报错
+                            ssl_context = ssl._create_unverified_context()
+                            with urllib.request.urlopen(ai_img_url, timeout=15, context=ssl_context) as img_res:
+                                img_bytes = img_res.read()
                             
-                            // 渲染最终安全重写的结果图片
-                            const imgEl = document.getElementById('resultImage');
-                            imgEl.src = rewriteUrl;
-                            imgEl.onload = () => imgEl.classList.remove('opacity-0');
+                            # 强力同步上传至你自己的华为云 OBS
+                            obs_resp = obs_client.putContent(
+                                OBS_BUCKET,
+                                obs_object_key,
+                                content=img_bytes,
+                                metadata={"original-name": f"{taskId}-outputs{ext}"}
+                            )
+                            
+                            if obs_resp.status < 300:
+                                corrected_output_url = f"{OBS_EXTERNAL_DOMAIN}/{obs_object_key}"
+                                print(f"🎉【Image2转存成功】安全落盘路径: {obs_object_key}")
+                                
+                                # 🔥 核心重写：偷梁换柱！将第三方的 OBS 链接彻底替换成你网关的专属直链，保护核心资产
+                                target_data["images"][0]["url"] = corrected_output_url
+                            else:
+                                print(f"❌【Image2 OBS拒绝】华为云存储桶写入失败: {obs_resp.errorMessage}")
+                                
+                        except Exception as upload_err:
+                            print(f"💥【Image2转存链路异常】: {str(upload_err)}")
+                            
+            # 无论上游状态是大写还是小写，统一强刷为小写 completed 喂给前端，打破前端轮询
+            if current_status in ["success", "completed", "done", "finished"]:
+                q_data["status"] = "completed"
+                target_data["status"] = "completed"
+                
+            return JSONResponse(status_code=response.status, content=q_data)
+            
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"文生图查询失败: {str(e)}"})
 
-                            // 写入审计元数据
-                            document.getElementById('metaUrl').innerText = rewriteUrl;
-                            document.getElementById('metaUrl').href = rewriteUrl;
-                            document.getElementById('metaAmount').innerText = `${targetData.actualAmount || 0} ${targetData.currency || 'USD'}`;
-                            document.getElementById('metaSize').innerText = targetData.size || '未知';
 
-                            switchView('success');
-                        } else {
-                            alert('❌ 网关返回成功，但未解析到合法的图片直链结构。');
-                            resetState();
-                        }
-                        document.getElementById('generateBtn').disabled = false;
-                        document.getElementById('generateBtn').innerText = '🚀 开始生成图片';
-                    } else if (status === 'failed' || status === 'error') {
-                        clearInterval(pollingTimer);
-                        clearInterval(elapsedTimer);
-                        alert(`❌ 云端任务生成失败: ${targetData.errorMessage || '未知错误'}`);
-                        resetState();
-                    }
-                } catch (e) {
-                    console.error('轮询网关中途出现异常(已自动忽略续航):', e);
-                }
-            }, 3000);
-        }
-
-        function resetState() {
-            clearInterval(pollingTimer);
-            clearInterval(elapsedTimer);
-            switchView('empty');
-            document.getElementById('generateBtn').disabled = false;
-            document.getElementById('generateBtn').innerText = '🚀 开始生成图片';
-        }
-    </script>
-</body>
-</html>
+if __name__ == "__main__":
+    import uvicorn
+    # 适配阿里云函数计算自定义运行时的监听端口
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("FC_SERVER_PORT", 9000)))
