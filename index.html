@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 安全文生图客户端 - 增强自检版</title>
+    <title>AI 安全文生图客户端 - 自适应像素版</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <style>
         .loading-spinner {
@@ -24,7 +24,7 @@
             <h1 class="text-xl font-bold text-indigo-600 flex items-center gap-2">
                 <span>🎨</span> GPT-Image2 文生图安全客户端
             </h1>
-            <span class="text-xs bg-indigo-100 text-indigo-800 px-2.5 py-1 rounded-full font-medium">全域容错排错模式已开启</span>
+            <span class="text-xs bg-indigo-100 text-indigo-800 px-2.5 py-1 rounded-full font-medium">智能像素范围拦截已就绪</span>
         </div>
     </header>
 
@@ -50,19 +50,19 @@
                     <textarea id="prompt" rows="4" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500">一只赛博朋克风格的柴犬，霓虹灯背景，8K 超高清</textarea>
                 </div>
                 
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">分辨率尺寸</label>
-                        <select id="size" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:border-indigo-500">
-                            <option value="1024x1024" selected>1024 x 1024</option>
-                            <option value="2048x2048">2048 x 2048</option>
-                            <option value="3072x3072">3072 x 3072</option>
-                        </select>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">自定义分辨率 (宽 x 高)</label>
+                    <div class="flex items-center gap-2">
+                        <input id="imgWidth" type="number" value="2048" min="1" placeholder="宽度" oninput="calculateLivePixels()" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500 text-center">
+                        <span class="text-slate-400 font-bold">×</span>
+                        <input id="imgHeight" type="number" value="2048" min="1" placeholder="高度" oninput="calculateLivePixels()" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500 text-center">
                     </div>
-                    <div class="flex items-center pt-6 pl-2">
-                        <input id="watermark" type="checkbox" class="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500">
-                        <label for="watermark" class="ml-2 text-sm font-medium text-slate-700 select-none">开启官方水印</label>
-                    </div>
+                    <p id="pixelFeedback" class="text-xs mt-1.5 font-medium text-emerald-600">当前像素总量: 4,194,304 (在允许范围内)</p>
+                </div>
+
+                <div class="flex items-center pl-1">
+                    <input id="watermark" type="checkbox" class="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500">
+                    <label for="watermark" class="ml-2 text-sm font-medium text-slate-700 select-none">开启官方水印</label>
                 </div>
 
                 <button id="generateBtn" onclick="startGeneration()" class="w-full mt-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-lg shadow-sm transition">
@@ -107,10 +107,42 @@
         </section>
     </main>
 
+    <footer class="bg-white border-t border-slate-200 py-3 text-center text-xs text-slate-400 font-mono">
+        &copy; 2026 API Gateway Hub. Smart checking mode is dynamic.
+    </footer>
+
     <script>
         let pollingTimer = null;
         let elapsedSeconds = 0;
         let elapsedTimer = null;
+
+        // 🌟 动态计算并实时提示像素状态
+        function calculateLivePixels() {
+            const width = parseInt(document.getElementById('imgWidth').value) || 0;
+            const height = parseInt(document.getElementById('imgHeight').value) || 0;
+            const totalPixels = width * height;
+            const feedbackEl = document.getElementById('pixelFeedback');
+
+            if (width <= 0 || height <= 0) {
+                feedbackEl.innerText = "❌ 请输入有效的长宽数值";
+                feedbackEl.className = "text-xs mt-1.5 font-medium text-rose-600";
+                return totalPixels;
+            }
+
+            const formattedPixels = totalPixels.toLocaleString();
+
+            if (totalPixels < 3686400) {
+                feedbackEl.innerText = `⚠️ 当前像素总量: ${formattedPixels} (低于允许下限 3,686,400)`;
+                feedbackEl.className = "text-xs mt-1.5 font-medium text-amber-600";
+            } else if (totalPixels > 16777216) {
+                feedbackEl.innerText = `❌ 当前像素总量: ${formattedPixels} (高于允许上限 16,777,216)`;
+                feedbackEl.className = "text-xs mt-1.5 font-medium text-rose-600";
+            } else {
+                feedbackEl.innerText = `🎉 当前像素总量: ${formattedPixels} (在允许范围内)`;
+                feedbackEl.className = "text-xs mt-1.5 font-medium text-emerald-600";
+            }
+            return totalPixels;
+        }
 
         function switchView(viewName) {
             document.getElementById('statusEmpty').classList.add('hidden');
@@ -125,13 +157,30 @@
             const baseUrl = document.getElementById('gatewayUrl').value.trim().replace(/\/$/, "");
             const token = document.getElementById('gatewayToken').value.trim();
             const prompt = document.getElementById('prompt').value.trim();
-            const size = document.getElementById('size').value;
             const watermark = document.getElementById('watermark').checked;
+            
+            // 读取自由填写的长宽
+            const width = parseInt(document.getElementById('imgWidth').value) || 0;
+            const height = parseInt(document.getElementById('imgHeight').value) || 0;
+            const totalPixels = width * height;
 
             if(!baseUrl || !token || !prompt) {
                 alert('⚠️ 错误：请完整填写网关基地址、Token 以及生成提示词！');
                 return;
             }
+
+            // 🌟 核心拦截逻辑：在发送请求前直接把关像素总量
+            if (width <= 0 || height <= 0) {
+                alert('❌ 失败：分辨率宽度和高度必须大于0！');
+                return;
+            }
+            if (totalPixels < 3686400 || totalPixels > 16777216) {
+                alert(`❌ 像素超限拦截：\n您当前的长宽为 ${width}×${height}，像素总量为 ${totalPixels.toLocaleString()}。\n上游第三方模型仅允许范围在 [3,686,400 ~ 16,777,216] 之间！\n\n💡 建议修改：试试 2048x2048 或 3000x2000`);
+                return;
+            }
+
+            // 拼接符合后端标准的 "宽x高" 字符串 (如 "2048x2048")
+            const sizeStr = `${width}x${height}`;
 
             clearInterval(elapsedTimer);
             elapsedSeconds = 0;
@@ -144,19 +193,17 @@
             document.getElementById('generateBtn').disabled = true;
 
             try {
-                // 采用高容错备用路由
                 const response = await fetch(`${baseUrl}/image/create`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'X-Gateway-Token': token
                     },
-                    body: JSON.stringify({ prompt, size, watermark })
+                    body: JSON.stringify({ prompt, size: sizeStr, watermark })
                 });
 
                 const result = await response.json();
                 
-                // 🌟 核心改进：全域模糊检索提取 TaskID
                 let derivedTaskId = null;
                 if (result) {
                     if (result.data?.taskId) derivedTaskId = result.data.taskId;
@@ -169,7 +216,6 @@
                     document.getElementById('taskIdDisplay').innerText = `Task ID: ${derivedTaskId}`;
                     startPolling(baseUrl, token, derivedTaskId);
                 } else {
-                    // 🌟 拒绝时：强制将第三方拦截的核心报文原封不动序列化抛出
                     const errDetail = result.msg || result.message || result.error || JSON.stringify(result);
                     throw new Error(errDetail);
                 }
@@ -232,6 +278,9 @@
             switchView('empty');
             document.getElementById('generateBtn').disabled = false;
         }
+
+        // 初始化计算一次
+        calculateLivePixels();
     </script>
 </body>
 </html>
