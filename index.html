@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 安全文生图网关系统</title>
+    <title>AI 安全文生图客户端 - 增强自检版</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <style>
         .loading-spinner {
@@ -24,7 +24,7 @@
             <h1 class="text-xl font-bold text-indigo-600 flex items-center gap-2">
                 <span>🎨</span> GPT-Image2 文生图安全客户端
             </h1>
-            <span class="text-xs bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-full font-medium">网关安全保护中</span>
+            <span class="text-xs bg-indigo-100 text-indigo-800 px-2.5 py-1 rounded-full font-medium">全域容错排错模式已开启</span>
         </div>
     </header>
 
@@ -36,26 +36,26 @@
             <div class="bg-slate-50 p-4 rounded-xl border border-slate-200/60 flex flex-col gap-3">
                 <div>
                     <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">网关 HTTP 触发器基地址</label>
-                    <input id="gatewayUrl" type="text" value="https://fastapi-ea-yvanulknmx.cn-hangzhou.fcapp.run" placeholder="例如: https://your-gateway.com" class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500">
+                    <input id="gatewayUrl" type="text" value="https://fastapi-ea-yvanulknmx.cn-hangzhou.fcapp.run" class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500">
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">合法内置 Token 令牌</label>
-                    <input id="gatewayToken" type="password" value="GFCAD_Secure_2026" placeholder="请输入 X-Gateway-Token" class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500">
+                    <input id="gatewayToken" type="password" value="GFCAD_Secure_2026" class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500">
                 </div>
             </div>
 
             <div class="flex flex-col gap-4">
                 <div>
                     <label class="block text-sm font-medium text-slate-700 mb-1">提示词 (Prompt)</label>
-                    <textarea id="prompt" rows="4" placeholder="一只赛博朋克风格的柴犬，霓虹灯背景，8K 超高清..." class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500">一只赛博朋克风格的柴犬，霓虹灯背景，8K 超高清</textarea>
+                    <textarea id="prompt" rows="4" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500">一只赛博朋克风格的柴犬，霓虹灯背景，8K 超高清</textarea>
                 </div>
                 
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">分辨率尺寸</label>
                         <select id="size" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:border-indigo-500">
-                            <option value="1024x1024">1024 x 1024</option>
-                            <option value="2048x2048" selected>2048 x 2048</option>
+                            <option value="1024x1024" selected>1024 x 1024</option>
+                            <option value="2048x2048">2048 x 2048</option>
                             <option value="3072x3072">3072 x 3072</option>
                         </select>
                     </div>
@@ -65,7 +65,7 @@
                     </div>
                 </div>
 
-                <button id="generateBtn" onclick="startGeneration()" class="w-full mt-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-lg shadow-sm transition duration-150 active:scale-[0.98]">
+                <button id="generateBtn" onclick="startGeneration()" class="w-full mt-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-lg shadow-sm transition">
                     🚀 开始生成图片
                 </button>
             </div>
@@ -86,7 +86,7 @@
                     <div>
                         <p class="text-indigo-600 font-medium text-sm">网关已成功向云端投递任务...</p>
                         <p id="taskIdDisplay" class="text-xs text-slate-400 mt-1 font-mono"></p>
-                        <p id="timerDisplay" class="text-xs text-amber-600 mt-2 font-medium bg-amber-50 px-2 py-0.5 rounded border border-amber-200 inline-block">已耗时: 0s (安全转存同步中)</p>
+                        <p id="timerDisplay" class="text-xs text-amber-600 mt-2 font-medium bg-amber-50 px-2 py-0.5 rounded border border-amber-200 inline-block">已耗时: 0s</p>
                     </div>
                 </div>
 
@@ -107,27 +107,20 @@
         </section>
     </main>
 
-    <footer class="bg-white border-t border-slate-200 py-3 text-center text-xs text-slate-400 font-mono">
-        &copy; 2026 API Gateway Hub. All info is fully dynamic and securely proxied.
-    </footer>
-
     <script>
         let pollingTimer = null;
         let elapsedSeconds = 0;
         let elapsedTimer = null;
 
-        // UI 视图切换管理器
         function switchView(viewName) {
             document.getElementById('statusEmpty').classList.add('hidden');
             document.getElementById('statusLoading').classList.add('hidden');
             document.getElementById('statusSuccess').classList.add('hidden');
-            
             if(viewName === 'empty') document.getElementById('statusEmpty').classList.remove('hidden');
             if(viewName === 'loading') document.getElementById('statusLoading').classList.remove('hidden');
             if(viewName === 'success') document.getElementById('statusSuccess').classList.remove('hidden');
         }
 
-        // 🌟 场景 5：发起任务（带全尺寸排错机制）
         async function startGeneration() {
             const baseUrl = document.getElementById('gatewayUrl').value.trim().replace(/\/$/, "");
             const token = document.getElementById('gatewayToken').value.trim();
@@ -140,10 +133,8 @@
                 return;
             }
 
-            // 重置并启动计时器
             clearInterval(elapsedTimer);
             elapsedSeconds = 0;
-            document.getElementById('timerDisplay').innerText = `已耗时: 0s (安全转存同步中)`;
             elapsedTimer = setInterval(() => {
                 elapsedSeconds++;
                 document.getElementById('timerDisplay').innerText = `已耗时: ${elapsedSeconds}s (安全转存同步中)`;
@@ -151,10 +142,9 @@
 
             switchView('loading');
             document.getElementById('generateBtn').disabled = true;
-            document.getElementById('generateBtn').innerText = '⏳ 正在排队调度...';
 
             try {
-                // 自动适配双路由机制，请求 /image/create 
+                // 采用高容错备用路由
                 const response = await fetch(`${baseUrl}/image/create`, {
                     method: 'POST',
                     headers: {
@@ -166,39 +156,42 @@
 
                 const result = await response.json();
                 
-                // 🌟 核心排错重写：检查是否存在合法的返回路径
-                if (response.ok && result && (result.data?.taskId || result.taskId)) {
-                    const taskId = result.data?.taskId || result.taskId;
-                    document.getElementById('taskIdDisplay').innerText = `Task ID: ${taskId}`;
-                    // 进入安全轮询
-                    startPolling(baseUrl, token, taskId);
+                // 🌟 核心改进：全域模糊检索提取 TaskID
+                let derivedTaskId = null;
+                if (result) {
+                    if (result.data?.taskId) derivedTaskId = result.data.taskId;
+                    else if (result.taskId) derivedTaskId = result.taskId;
+                    else if (result.data?.id) derivedTaskId = result.data.id;
+                    else if (result.id) derivedTaskId = result.id;
+                }
+
+                if (response.ok && derivedTaskId) {
+                    document.getElementById('taskIdDisplay').innerText = `Task ID: ${derivedTaskId}`;
+                    startPolling(baseUrl, token, derivedTaskId);
                 } else {
-                    // 🌟 如果上游报400，把真实的拒绝 JSON 信息扒出来展示在弹窗中
-                    const traceDetail = result.msg || result.message || result.error || JSON.stringify(result);
-                    throw new Error(`[上游服务拒绝] 原因: ${traceDetail}`);
+                    // 🌟 拒绝时：强制将第三方拦截的核心报文原封不动序列化抛出
+                    const errDetail = result.msg || result.message || result.error || JSON.stringify(result);
+                    throw new Error(errDetail);
                 }
             } catch (err) {
-                alert(`💥 发起失败: ${err.message}`);
+                alert(`💥 发起失败原因报告:\n${err.message}`);
                 resetState();
             }
         }
 
-        // 🌟 场景 6：安全轮询探测区
         function startPolling(baseUrl, token, taskId) {
             pollingTimer = setInterval(async () => {
                 try {
                     const response = await fetch(`${baseUrl}/image/task?taskId=${taskId}`, {
                         method: 'GET',
-                        headers: {
-                            'X-Gateway-Token': token
-                        }
+                        headers: { 'X-Gateway-Token': token }
                     });
 
-                    if (!response.ok) return; 
+                    if (!response.ok) return;
 
                     const result = await response.json();
                     const targetData = result.data || result;
-                    const status = String(targetData.status).toLowerCase();
+                    const status = String(targetData.status || '').toLowerCase();
 
                     if (status === 'completed' || status === 'success') {
                         clearInterval(pollingTimer);
@@ -206,32 +199,29 @@
                         
                         const images = targetData.images || [];
                         if (images.length > 0) {
-                            const rewriteUrl = images[0].url;
-                            
+                            const rewriteUrl = images[0].url || images[0];
                             const imgEl = document.getElementById('resultImage');
                             imgEl.src = rewriteUrl;
                             imgEl.onload = () => imgEl.classList.remove('opacity-0');
 
                             document.getElementById('metaUrl').innerText = rewriteUrl;
                             document.getElementById('metaUrl').href = rewriteUrl;
-                            document.getElementById('metaAmount').innerText = `${targetData.actualAmount || 0} ${targetData.currency || 'USD'}`;
-                            document.getElementById('metaSize').innerText = targetData.size || '未知';
-
+                            document.getElementById('metaAmount').innerText = `${targetData.actualAmount || 0} USD`;
+                            document.getElementById('metaSize').innerText = targetData.size || '自动';
                             switchView('success');
                         } else {
-                            alert('❌ 网关返回成功，但未解析到合法的 images[0].url 数据。');
+                            alert('❌ 未捕获到落盘结构中的图片直链 URL');
                             resetState();
                         }
                         document.getElementById('generateBtn').disabled = false;
-                        document.getElementById('generateBtn').innerText = '🚀 开始生成图片';
                     } else if (status === 'failed' || status === 'error') {
                         clearInterval(pollingTimer);
                         clearInterval(elapsedTimer);
-                        alert(`❌ 云端任务生成失败: ${targetData.errorMessage || targetData.msg || '未知上游错误'}`);
+                        alert(`❌ 上游异步生成失败: ${targetData.errorMessage || JSON.stringify(result)}`);
                         resetState();
                     }
                 } catch (e) {
-                    console.error('轮询执行中发生了网络抖动(已自动续航探测):', e);
+                    console.error(e);
                 }
             }, 3000);
         }
@@ -241,7 +231,6 @@
             clearInterval(elapsedTimer);
             switchView('empty');
             document.getElementById('generateBtn').disabled = false;
-            document.getElementById('generateBtn').innerText = '🚀 开始生成图片';
         }
     </script>
 </body>
