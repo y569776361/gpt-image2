@@ -155,14 +155,7 @@
 
             try {
                 // 请求网关的场景 5 接口
-                const response = await fetch(`${baseUrl}/api/image/create`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Gateway-Token': token
-                    },
-                    body: JSON.stringify({ prompt, size, watermark })
-                });
+                const response = await fetch(`${baseUrl}/image/create`, { ... });
 
                 const result = await response.json();
                 
