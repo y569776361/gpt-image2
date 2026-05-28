@@ -3,347 +3,247 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>gpt-image-2 文生图客户端</title>
+    <title>AI 安全文生图网关系统</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <style>
-        :root {
-            --primary-color: #4f46e5;
-            --primary-hover: #4338ca;
-            --background-color: #f9fafb;
-            --card-background: #ffffff;
-            --text-main: #111827;
-            --text-muted: #6b7280;
-            --border-color: #e5e7eb;
-            --success-color: #10b981;
-            --error-color: #ef4444;
+        .loading-spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #09f;
+            animation: spin 1s linear infinite;
         }
-
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-            background-color: var(--background-color);
-            color: var(--text-main);
-            padding: 40px 20px;
-        }
-        .container { max-width: 800px; margin: 0 auto; }
-        header { text-align: center; margin-bottom: 32px; }
-        header h1 { font-size: 26px; font-weight: 700; margin-bottom: 8px; }
-        header p { color: var(--text-muted); font-size: 14px; }
-        
-        .card {
-            background-color: var(--card-background);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 28px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-            margin-bottom: 24px;
-        }
-        .form-group { margin-bottom: 20px; }
-        .form-row { display: flex; gap: 16px; margin-bottom: 20px; }
-        .form-row .form-group { flex: 1; margin-bottom: 0; }
-        
-        label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; }
-        input[type="text"], textarea, select {
-            width: 100%; padding: 10px 14px; border: 1px solid var(--border-color);
-            border-radius: 6px; font-size: 14px; background-color: #fff;
-        }
-        input:focus, textarea:focus, select:focus {
-            outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
-        }
-        textarea { resize: vertical; min-height: 90px; }
-        .hint { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
-        
-        button {
-            width: 100%; background-color: var(--primary-color); color: white; border: none;
-            padding: 12px 24px; font-size: 16px; font-weight: 600; border-radius: 6px; cursor: pointer;
-        }
-        button:hover { background-color: var(--primary-hover); }
-        button:disabled { background-color: #a5b4fc; cursor: not-allowed; }
-
-        /* 状态与控制面板 */
-        .status-panel { display: none; border-left: 4px solid var(--primary-color); }
-        .status-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-        .badge { display: inline-block; padding: 4px 8px; font-size: 12px; font-weight: 600; border-radius: 4px; }
-        
-        .badge-pending { background-color: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
-        .badge-processing { background-color: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
-        .badge-transferring { background-color: #e0f2fe; color: #0369a1; border: 1px solid #7dd3fc; }
-        .badge-completed { background-color: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
-        .badge-failed { background-color: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
-
-        .progress-box { background-color: #f3f4f6; border-radius: 4px; height: 8px; overflow: hidden; margin-bottom: 12px; }
-        .progress-bar { background-color: var(--primary-color); height: 100%; width: 0%; transition: width 0.3s; }
-        .log-box {
-            background-color: #1e1e24; color: #a7a7bc; font-family: monospace; font-size: 12px;
-            padding: 12px; border-radius: 6px; max-height: 150px; overflow-y: auto; white-space: pre-wrap;
-        }
-
-        /* 结果展示 */
-        .result-panel { display: none; text-align: center; }
-        .result-image-wrapper {
-            margin: 20px auto 0 auto; max-width: 100%; border-radius: 8px;
-            overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border: 1px solid var(--border-color);
-        }
-        .result-image-wrapper img { display: block; width: 100%; height: auto; }
-        .meta-info {
-            margin-top: 16px; display: flex; justify-content: space-around; font-size: 13px;
-            color: var(--text-muted); border-top: 1px solid var(--border-color); padding-top: 12px;
-        }
-        .meta-info span strong { color: var(--text-main); }
-        .error-panel {
-            display: none; background-color: #fef2f2; border: 1px solid #fca5a5;
-            color: #991b1b; padding: 16px; border-radius: 8px; margin-bottom: 24px; font-size: 14px;
-        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
-<body>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col justify-between">
 
-<div class="container">
-    <header>
-        <h1>gpt-image-2 文生图客户端</h1>
-        <p>对接阿里云 Web 函数安全网关（基于异步流式轮询架构）</p>
+    <header class="bg-white shadow-sm border-b border-slate-200 py-4 px-6">
+        <div class="max-w-6xl mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold text-indigo-600 flex items-center gap-2">
+                <span>🎨</span> GPT-Image2 文生图安全客户端
+            </h1>
+            <span class="text-xs bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-full font-medium">网关安全保护中</span>
+        </div>
     </header>
 
-    <div class="error-panel" id="errorPanel"></div>
-
-    <div class="card" id="formCard">
-        <div class="form-group">
-            <label>提示词 (Prompt) *</label>
-            <textarea id="prompt" placeholder="描述你想要生成的图片内容，例如：A cyberpunk shiba inu, neon lights..." required>A cyberpunk shiba inu, neon lights</textarea>
-            <div class="hint">支持 1–4000 字符，不可空白。</div>
-        </div>
-
-        <div class="form-row">
-            <div class="form-group">
-                <label>尺寸 (Size)</label>
-                <input type="text" id="size" value="1024x1024" placeholder="例如: 1024x1024 或 auto">
-                <div class="hint">需为16的倍数，最大边≤3840px</div>
+    <main class="max-w-6xl mx-auto my-8 px-4 w-full grid grid-cols-1 md:grid-cols-12 gap-8 flex-grow">
+        
+        <section class="md:col-span-5 bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col gap-5">
+            <h2 class="text-lg font-semibold text-slate-700 border-b pb-2">配置与控制</h2>
+            
+            <div class="bg-slate-50 p-4 rounded-xl border border-slate-200/60 flex flex-col gap-3">
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">网关 HTTP 触发器基地址</label>
+                    <input id="gatewayUrl" type="text" value="http://127.0.0.1:9000" placeholder="例如: https://your-gateway.com" class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">合法内置 Token 令牌</label>
+                    <input id="gatewayToken" type="password" value="GFCAD_Secure_2026" placeholder="请输入 X-Gateway-Token" class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500">
+                </div>
             </div>
-            <div class="form-group">
-                <label>输出格式 (Format)</label>
-                <select id="outputFormat">
-                    <option value="png">PNG</option>
-                    <option value="jpeg">JPEG</option>
-                </select>
+
+            <div class="flex flex-col gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">提示词 (Prompt)</label>
+                    <textarea id="prompt" rows="4" placeholder="一只赛博朋克风格的柴犬，霓虹灯背景，8K 超高清..." class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500">一只赛博朋克风格的柴犬，霓虹灯背景，8K 超高清</textarea>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">分辨率尺寸</label>
+                        <select id="size" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:border-indigo-500">
+                            <option value="1024x1024">1024 x 1024</option>
+                            <option value="2048x2048" selected>2048 x 2048</option>
+                            <option value="3072x3072">3072 x 3072</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center pt-6 pl-2">
+                        <input id="watermark" type="checkbox" class="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500">
+                        <label for="watermark" class="ml-2 text-sm font-medium text-slate-700 select-none">开启官方水印</label>
+                    </div>
+                </div>
+
+                <button id="generateBtn" onclick="startGeneration()" class="w-full mt-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-lg shadow-sm transition duration-150 active:scale-[0.98]">
+                    🚀 开始生成图片
+                </button>
             </div>
-        </div>
+        </section>
 
-        <div class="form-row">
-            <div class="form-group">
-                <label>画面质量 (Quality)</label>
-                <select id="quality">
-                    <option value="auto">自动 (Auto)</option>
-                    <option value="low">低清 (Low)</option>
-                    <option value="medium">中等 (Medium)</option>
-                    <option value="high" selected>高清 (High)</option>
-                </select>
+        <section class="md:col-span-7 bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col min-h-[400px]">
+            <h2 class="text-lg font-semibold text-slate-700 border-b pb-2 mb-4">生成结果看板</h2>
+            
+            <div class="flex-grow flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-xl bg-slate-50 p-4 relative overflow-hidden" id="displayContainer">
+                
+                <div id="statusEmpty" class="text-center flex flex-col items-center gap-2">
+                    <span class="text-4xl">🖼️</span>
+                    <p class="text-slate-400 text-sm">暂无任务，请在左侧配置并点击生成按钮</p>
+                </div>
+
+                <div id="statusLoading" class="hidden text-center flex flex-col items-center gap-4">
+                    <div class="loading-spinner"></div>
+                    <div>
+                        <p class="text-indigo-600 font-medium text-sm">网关已成功向云端投递任务...</p>
+                        <p id="taskIdDisplay" class="text-xs text-slate-400 mt-1 font-mono"></p>
+                        <p id="timerDisplay" class="text-xs text-amber-600 mt-2 font-medium bg-amber-50 px-2 py-0.5 rounded border border-amber-200 inline-block">已耗时: 0s (安全转存同步中)</p>
+                    </div>
+                </div>
+
+                <div id="statusSuccess" class="hidden w-full h-full flex flex-col items-center justify-between gap-4">
+                    <div class="w-full max-h-[450px] overflow-hidden rounded-lg shadow-inner bg-black flex items-center justify-center">
+                        <img id="resultImage" src="" alt="AI Result" class="max-w-full max-h-[450px] object-contain opacity-0 transition-opacity duration-500">
+                    </div>
+                    <div class="w-full bg-slate-100 p-3 rounded-lg text-xs font-mono text-slate-600 space-y-1">
+                        <p class="truncate"><strong class="text-slate-700">安全重写直链:</strong> <a id="metaUrl" href="#" target="_blank" class="text-indigo-600 hover:underline"></a></p>
+                        <div class="grid grid-cols-2 gap-2 pt-1 border-t border-slate-200 mt-1 text-slate-500">
+                            <p><strong>实际扣费:</strong> <span id="metaAmount"></span></p>
+                            <p><strong>最终尺寸:</strong> <span id="metaSize"></span></p>
+                        </div>
+                    </div>
+                </div>
+
             </div>
-            <div class="form-group">
-                <label>背景模式 (Background)</label>
-                <select id="background">
-                    <option value="auto">自动 (Auto)</option>
-                    <option value="opaque">不透明 (Opaque)</option>
-                    <option value="transparent">透明 (Transparent)</option>
-                </select>
-            </div>
-        </div>
+        </section>
+    </main>
 
-        <button id="submitBtn" onclick="createTask()">立即生成图片</button>
-    </div>
+    <footer class="bg-white border-t border-slate-200 py-3 text-center text-xs text-slate-400 font-mono">
+        &copy; 2026 API Gateway Hub. All info is fully dynamic and securely proxied.
+    </footer>
 
-    <div class="card status-panel" id="statusCard">
-        <div class="status-title">
-            <label>异步任务追踪</label>
-            <span class="badge" id="statusBadge">PENDING</span>
-        </div>
-        <div class="progress-box">
-            <div class="progress-bar" id="progressBar"></div>
-        </div>
-        <div class="form-group" style="margin-top: 12px;">
-            <label style="font-size: 12px; color: var(--text-muted);">上游核心事件流日志</label>
-            <div class="log-box" id="logBox">准备就绪...</div>
-        </div>
-    </div>
+    <script>
+        let pollingTimer = null;
+        let elapsedSeconds = 0;
+        let elapsedTimer = null;
 
-    <div class="card result-panel" id="resultCard">
-        <label>✨ 生成成功</label>
-        <div class="result-image-wrapper">
-            <img id="resultImage" src="" alt="Generated Image">
-        </div>
-        <div class="meta-info">
-            <span id="metaTaskId">任务ID: --</span>
-            <span id="metaSize">分辨率: --</span>
-            <span id="metaCost">消费金额: --</span>
-        </div>
-        <button style="margin-top: 20px; background-color: #374151;" onclick="resetForm()">重新生成</button>
-    </div>
-</div>
+        // UI 视图切换管理器
+        function switchView(viewName) {
+            document.getElementById('statusEmpty').classList.add('hidden');
+            document.getElementById('statusLoading').classList.add('hidden');
+            document.getElementById('statusSuccess').classList.add('hidden');
+            
+            if(viewName === 'empty') document.getElementById('statusEmpty').classList.remove('hidden');
+            if(viewName === 'loading') document.getElementById('statusLoading').classList.remove('hidden');
+            if(viewName === 'success') document.getElementById('statusSuccess').classList.remove('hidden');
+        }
 
-<script>
-    // 💡 配置提示：若前端HTML和阿里云后端函数部署在同一个域名下，请保持空字符串 ""。
-    // 若前后端跨域，请在此填写阿里云函数的完整的 HTTP 触发器 URL 地址（例如 "https://service-xxx.fc.aliyuncs.com"）
-    const BASE_URL = ""; 
+        // 步骤 1：触发文生图任务
+        async function startGeneration() {
+            const baseUrl = document.getElementById('gatewayUrl').value.trim().replace(/\/$/, "");
+            const token = document.getElementById('gatewayToken').value.trim();
+            const prompt = document.getElementById('prompt').value.trim();
+            const size = document.getElementById('size').value;
+            const watermark = document.getElementById('watermark').checked;
 
-    let timer = null;
-    let currentTaskId = null;
-
-    const statusBadges = {
-        'PENDING': { class: 'badge-pending', width: '25%', text: '排队中 (PENDING)' },
-        'PROCESSING': { class: 'badge-processing', width: '55%', text: '渲染中 (PROCESSING)' },
-        'TRANSFERRING': { class: 'badge-transferring', width: '85%', text: 'OBS转存中 (TRANSFERRING)' },
-        'COMPLETED': { class: 'badge-completed', width: '100%', text: '完成 (COMPLETED)' },
-        'FAILED': { class: 'badge-failed', width: '100%', text: '失败 (FAILED)' }
-    };
-
-    function appendLog(text) {
-        const logBox = document.getElementById('logBox');
-        logBox.innerText += `\n[${new Date().toLocaleTimeString()}] ${text}`;
-        logBox.scrollTop = logBox.scrollHeight;
-    }
-
-    function showError(msg) {
-        const panel = document.getElementById('errorPanel');
-        panel.innerText = msg;
-        panel.style.display = 'block';
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-
-    function clearError() { document.getElementById('errorPanel').style.display = 'none'; }
-
-    // 阶段 1：向后端创建任务 (POST /image/create)
-    async function createTask() {
-        clearError();
-        const prompt = document.getElementById('prompt').value.trim();
-        if (!prompt) { showError("提示词不能为空！"); return; }
-
-        const submitBtn = document.getElementById('submitBtn');
-        submitBtn.disabled = true;
-        submitBtn.innerText = "提交任务请求中...";
-
-        const payload = {
-            model: "gpt-image-2",
-            prompt: prompt,
-            size: document.getElementById('size').value.trim() || "1024x1024",
-            quality: document.getElementById('quality').value,
-            background: document.getElementById('background').value,
-            outputFormat: document.getElementById('outputFormat').value
-        };
-
-        try {
-            const response = await fetch(`${BASE_URL}/image/create`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json; charset=utf-8' },
-                body: JSON.stringify(payload)
-            });
-
-            const result = await response.json();
-
-            // 精准捕获并回显后端透传过来的 400（余额不足 / 参数校验失败）或 401（鉴权失败）错误
-            if (!response.ok) {
-                throw new Error(result.error || result.errorMessage || `服务器返回异常 (${response.status})`);
+            if(!baseUrl || !token || !prompt) {
+                alert('⚠️ 错误：请完整填写网关基地址、Token 以及生成提示词！');
+                return;
             }
 
-            if (result.data && result.data.taskId) {
-                currentTaskId = result.data.taskId;
-                const status = result.data.status || 'PENDING';
-                
-                document.getElementById('statusCard').style.display = 'block';
-                appendLog(`成功创建任务，获取到单号: ${currentTaskId}`);
-                
-                updateStatusUI(status);
+            // 重置并启动计时器
+            clearInterval(elapsedTimer);
+            elapsedSeconds = 0;
+            document.getElementById('timerDisplay').innerText = `已耗时: 0s (安全转存同步中)`;
+            elapsedTimer = setInterval(() => {
+                elapsedSeconds++;
+                document.getElementById('timerDisplay').innerText = `已耗时: ${elapsedSeconds}s (安全转存同步中)`;
+            }, 1000);
 
-                if (status === 'FAILED') {
-                    throw new Error("后端服务并发超限，创建时直接落库失败。");
+            switchView('loading');
+            document.getElementById('generateBtn').disabled = true;
+            document.getElementById('generateBtn').innerText = '⏳ 正在排队调度...';
+
+            try {
+                // 请求网关的场景 5 接口
+                const response = await fetch(`${baseUrl}/api/image/create`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Gateway-Token': token
+                    },
+                    body: JSON.stringify({ prompt, size, watermark })
+                });
+
+                const result = await response.json();
+                
+                if (response.ok && result.data && result.data.taskId) {
+                    const taskId = result.data.taskId;
+                    document.getElementById('taskIdDisplay').innerText = `Task ID: ${taskId}`;
+                    // 进入步骤 2：启动安全轮询探测
+                    startPolling(baseUrl, token, taskId);
+                } else {
+                    throw new Error(result.error || result.detail || '网关拒绝服务');
                 }
-
-                // 开启异步安全轮询
-                startPolling();
-            } else {
-                throw new Error("接口未能成功返回 taskId 标识");
+            } catch (err) {
+                alert(`💥 发起失败: ${err.message}`);
+                resetState();
             }
-
-        } catch (err) {
-            showError(`创建请求落空: ${err.message}`);
-            submitBtn.disabled = false;
-            submitBtn.innerText = "立即生成图片";
         }
-    }
 
-    function updateStatusUI(status) {
-        const badge = document.getElementById('statusBadge');
-        const progressBar = document.getElementById('progressBar');
-        badge.className = 'badge';
-        
-        const config = statusBadges[status] || { class: 'badge-pending', width: '15%', text: status };
-        badge.classList.add(config.class);
-        badge.innerText = config.text;
-        progressBar.style.width = config.width;
-    }
+        // 步骤 2：网关安全轮询探测
+        function startPolling(baseUrl, token, taskId) {
+            // 每隔 3 秒去网关刷一次状态
+            pollingTimer = setInterval(async () => {
+                try {
+                    // 请求网关的场景 6 接口
+                    const response = await fetch(`${baseUrl}/api/image/task?taskId=${taskId}`, {
+                        method: 'GET',
+                        headers: {
+                            'X-Gateway-Token': token
+                        }
+                    });
 
-    function startPolling() {
-        if (timer) clearInterval(timer);
-        timer = setInterval(pollTaskStatus, 2500); // 每 2.5 秒轮询一次上游状态
-    }
+                    if (!response.ok) return; // 如果发生4xx/5xx网关抖动，忽略，等待下一次轮询
 
-    // 阶段 2：安全步进式轮询状态 (GET /image/task)
-    async function pollTaskStatus() {
-        if (!currentTaskId) return;
+                    const result = await response.json();
+                    const targetData = result.data || result;
+                    const status = String(targetData.status).toLowerCase();
 
-        try {
-            const response = await fetch(`${BASE_URL}/image/task?taskId=${currentTaskId}`);
-            const result = await response.json();
+                    // 探测是否落盘成功且完成
+                    if (status === 'completed' || status === 'success') {
+                        clearInterval(pollingTimer);
+                        clearInterval(elapsedTimer);
+                        
+                        if (targetData.images && targetData.images.length > 0) {
+                            const rewriteUrl = targetData.images[0].url;
+                            
+                            // 渲染最终安全重写的结果图片
+                            const imgEl = document.getElementById('resultImage');
+                            imgEl.src = rewriteUrl;
+                            imgEl.onload = () => imgEl.classList.remove('opacity-0');
 
-            if (!response.ok) throw new Error(result.error || result.errorMessage || "轮询遭遇中断");
+                            // 写入审计元数据
+                            document.getElementById('metaUrl').innerText = rewriteUrl;
+                            document.getElementById('metaUrl').href = rewriteUrl;
+                            document.getElementById('metaAmount').innerText = `${targetData.actualAmount || 0} ${targetData.currency || 'USD'}`;
+                            document.getElementById('metaSize').innerText = targetData.size || '未知';
 
-            const taskData = result.data;
-            const status = taskData.status;
-
-            updateStatusUI(status);
-            appendLog(`上游管道反馈状态 -> ${status}`);
-
-            if (status === 'COMPLETED') {
-                clearInterval(timer);
-                appendLog("✅ 任务完成，正在为您渲染画面...");
-                showResult(taskData);
-            } else if (status === 'FAILED') {
-                clearInterval(timer);
-                throw new Error(taskData.errorMessage || "未知上游渲染错误");
-            }
-
-        } catch (err) {
-            clearInterval(timer);
-            showError(`进度追踪失败: ${err.message}`);
-            document.getElementById('submitBtn').disabled = false;
-            document.getElementById('submitBtn').innerText = "立即生成图片";
+                            switchView('success');
+                        } else {
+                            alert('❌ 网关返回成功，但未解析到合法的图片直链结构。');
+                            resetState();
+                        }
+                        document.getElementById('generateBtn').disabled = false;
+                        document.getElementById('generateBtn').innerText = '🚀 开始生成图片';
+                    } else if (status === 'failed' || status === 'error') {
+                        clearInterval(pollingTimer);
+                        clearInterval(elapsedTimer);
+                        alert(`❌ 云端任务生成失败: ${targetData.errorMessage || '未知错误'}`);
+                        resetState();
+                    }
+                } catch (e) {
+                    console.error('轮询网关中途出现异常(已自动忽略续航):', e);
+                }
+            }, 3000);
         }
-    }
 
-    // 阶段 3：成功渲染展示
-    function showResult(data) {
-        document.getElementById('statusCard').style.display = 'none';
-        document.getElementById('formCard').style.display = 'none';
-        document.getElementById('resultCard').style.display = 'block';
-
-        if (data.images && data.images.length > 0) {
-            document.getElementById('resultImage').src = data.images[0].url; // 图片 OBS 永久外链
-            document.getElementById('metaSize').innerHTML = `物理分辨率: <strong>${data.images[0].size}</strong>`;
+        function resetState() {
+            clearInterval(pollingTimer);
+            clearInterval(elapsedTimer);
+            switchView('empty');
+            document.getElementById('generateBtn').disabled = false;
+            document.getElementById('generateBtn').innerText = '🚀 开始生成图片';
         }
-        document.getElementById('metaTaskId').innerHTML = `任务流水号: <strong>${data.taskId}</strong>`;
-        document.getElementById('metaCost').innerHTML = `结算金额: <strong>$${data.actualAmount !== null ? data.actualAmount : '0'} ${data.currency}</strong>`;
-    }
-
-    function resetForm() {
-        currentTaskId = null;
-        if (timer) clearInterval(timer);
-        document.getElementById('resultCard').style.display = 'none';
-        document.getElementById('statusCard').style.display = 'none';
-        document.getElementById('formCard').style.display = 'block';
-        
-        const submitBtn = document.getElementById('submitBtn');
-        submitBtn.disabled = false;
-        submitBtn.innerText = "立即生成图片";
-        document.getElementById('logBox').innerText = "准备就绪...";
-        clearError();
-    }
-</script>
+    </script>
 </body>
 </html>
