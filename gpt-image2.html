@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>gpt-image-2 文生图客户端</title>
+    <style>
+        :root {
+            --primary-color: #4f46e5;
+            --primary-hover: #4338ca;
+            --background-color: #f9fafb;
+            --card-background: #ffffff;
+            --text-main: #111827;
+            --text-muted: #6b7280;
+            --border-color: #e5e7eb;
+            --success-color: #10b981;
+            --error-color: #ef4444;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-main);
+            padding: 40px 20px;
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        header { text-align: center; margin-bottom: 32px; }
+        header h1 { font-size: 26px; font-weight: 700; margin-bottom: 8px; }
+        header p { color: var(--text-muted); font-size: 14px; }
+        
+        .card {
+            background-color: var(--card-background);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 28px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            margin-bottom: 24px;
+        }
+        .form-group { margin-bottom: 20px; }
+        .form-row { display: flex; gap: 16px; margin-bottom: 20px; }
+        .form-row .form-group { flex: 1; margin-bottom: 0; }
+        
+        label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+        input[type="text"], textarea, select {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border-color);
+            border-radius: 6px; font-size: 14px; background-color: #fff;
+        }
+        input:focus, textarea:focus, select:focus {
+            outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+        textarea { resize: vertical; min-height: 90px; }
+        .hint { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+        
+        button {
+            width: 100%; background-color: var(--primary-color); color: white; border: none;
+            padding: 12px 24px; font-size: 16px; font-weight: 600; border-radius: 6px; cursor: pointer;
+        }
+        button:hover { background-color: var(--primary-hover); }
+        button:disabled { background-color: #a5b4fc; cursor: not-allowed; }
+
+        /* 状态与控制面板 */
+        .status-panel { display: none; border-left: 4px solid var(--primary-color); }
+        .status-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .badge { display: inline-block; padding: 4px 8px; font-size: 12px; font-weight: 600; border-radius: 4px; }
+        
+        .badge-pending { background-color: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+        .badge-processing { background-color: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+        .badge-transferring { background-color: #e0f2fe; color: #0369a1; border: 1px solid #7dd3fc; }
+        .badge-completed { background-color: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
+        .badge-failed { background-color: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+
+        .progress-box { background-color: #f3f4f6; border-radius: 4px; height: 8px; overflow: hidden; margin-bottom: 12px; }
+        .progress-bar { background-color: var(--primary-color); height: 100%; width: 0%; transition: width 0.3s; }
+        .log-box {
+            background-color: #1e1e24; color: #a7a7bc; font-family: monospace; font-size: 12px;
+            padding: 12px; border-radius: 6px; max-height: 150px; overflow-y: auto; white-space: pre-wrap;
+        }
+
+        /* 结果展示 */
+        .result-panel { display: none; text-align: center; }
+        .result-image-wrapper {
+            margin: 20px auto 0 auto; max-width: 100%; border-radius: 8px;
+            overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border: 1px solid var(--border-color);
+        }
+        .result-image-wrapper img { display: block; width: 100%; height: auto; }
+        .meta-info {
+            margin-top: 16px; display: flex; justify-content: space-around; font-size: 13px;
+            color: var(--text-muted); border-top: 1px solid var(--border-color); padding-top: 12px;
+        }
+        .meta-info span strong { color: var(--text-main); }
+        .error-panel {
+            display: none; background-color: #fef2f2; border: 1px solid #fca5a5;
+            color: #991b1b; padding: 16px; border-radius: 8px; margin-bottom: 24px; font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>gpt-image-2 文生图客户端</h1>
+        <p>对接阿里云 Web 函数安全网关（基于异步流式轮询架构）</p>
+    </header>
+
+    <div class="error-panel" id="errorPanel"></div>
+
+    <div class="card" id="formCard">
+        <div class="form-group">
+            <label>提示词 (Prompt) *</label>
+            <textarea id="prompt" placeholder="描述你想要生成的图片内容，例如：A cyberpunk shiba inu, neon lights..." required>A cyberpunk shiba inu, neon lights</textarea>
+            <div class="hint">支持 1–4000 字符，不可空白。</div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label>尺寸 (Size)</label>
+                <input type="text" id="size" value="1024x1024" placeholder="例如: 1024x1024 或 auto">
+                <div class="hint">需为16的倍数，最大边≤3840px</div>
+            </div>
+            <div class="form-group">
+                <label>输出格式 (Format)</label>
+                <select id="outputFormat">
+                    <option value="png">PNG</option>
+                    <option value="jpeg">JPEG</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label>画面质量 (Quality)</label>
+                <select id="quality">
+                    <option value="auto">自动 (Auto)</option>
+                    <option value="low">低清 (Low)</option>
+                    <option value="medium">中等 (Medium)</option>
+                    <option value="high" selected>高清 (High)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>背景模式 (Background)</label>
+                <select id="background">
+                    <option value="auto">自动 (Auto)</option>
+                    <option value="opaque">不透明 (Opaque)</option>
+                    <option value="transparent">透明 (Transparent)</option>
+                </select>
+            </div>
+        </div>
+
+        <button id="submitBtn" onclick="createTask()">立即生成图片</button>
+    </div>
+
+    <div class="card status-panel" id="statusCard">
+        <div class="status-title">
+            <label>异步任务追踪</label>
+            <span class="badge" id="statusBadge">PENDING</span>
+        </div>
+        <div class="progress-box">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <div class="form-group" style="margin-top: 12px;">
+            <label style="font-size: 12px; color: var(--text-muted);">上游核心事件流日志</label>
+            <div class="log-box" id="logBox">准备就绪...</div>
+        </div>
+    </div>
+
+    <div class="card result-panel" id="resultCard">
+        <label>✨ 生成成功</label>
+        <div class="result-image-wrapper">
+            <img id="resultImage" src="" alt="Generated Image">
+        </div>
+        <div class="meta-info">
+            <span id="metaTaskId">任务ID: --</span>
+            <span id="metaSize">分辨率: --</span>
+            <span id="metaCost">消费金额: --</span>
+        </div>
+        <button style="margin-top: 20px; background-color: #374151;" onclick="resetForm()">重新生成</button>
+    </div>
+</div>
+
+<script>
+    // 💡 配置提示：若前端HTML和阿里云后端函数部署在同一个域名下，请保持空字符串 ""。
+    // 若前后端跨域，请在此填写阿里云函数的完整的 HTTP 触发器 URL 地址（例如 "https://service-xxx.fc.aliyuncs.com"）
+    const BASE_URL = ""; 
+
+    let timer = null;
+    let currentTaskId = null;
+
+    const statusBadges = {
+        'PENDING': { class: 'badge-pending', width: '25%', text: '排队中 (PENDING)' },
+        'PROCESSING': { class: 'badge-processing', width: '55%', text: '渲染中 (PROCESSING)' },
+        'TRANSFERRING': { class: 'badge-transferring', width: '85%', text: 'OBS转存中 (TRANSFERRING)' },
+        'COMPLETED': { class: 'badge-completed', width: '100%', text: '完成 (COMPLETED)' },
+        'FAILED': { class: 'badge-failed', width: '100%', text: '失败 (FAILED)' }
+    };
+
+    function appendLog(text) {
+        const logBox = document.getElementById('logBox');
+        logBox.innerText += `\n[${new Date().toLocaleTimeString()}] ${text}`;
+        logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    function showError(msg) {
+        const panel = document.getElementById('errorPanel');
+        panel.innerText = msg;
+        panel.style.display = 'block';
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function clearError() { document.getElementById('errorPanel').style.display = 'none'; }
+
+    // 阶段 1：向后端创建任务 (POST /image/create)
+    async function createTask() {
+        clearError();
+        const prompt = document.getElementById('prompt').value.trim();
+        if (!prompt) { showError("提示词不能为空！"); return; }
+
+        const submitBtn = document.getElementById('submitBtn');
+        submitBtn.disabled = true;
+        submitBtn.innerText = "提交任务请求中...";
+
+        const payload = {
+            model: "gpt-image-2",
+            prompt: prompt,
+            size: document.getElementById('size').value.trim() || "1024x1024",
+            quality: document.getElementById('quality').value,
+            background: document.getElementById('background').value,
+            outputFormat: document.getElementById('outputFormat').value
+        };
+
+        try {
+            const response = await fetch(`${BASE_URL}/image/create`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json; charset=utf-8' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+
+            // 精准捕获并回显后端透传过来的 400（余额不足 / 参数校验失败）或 401（鉴权失败）错误
+            if (!response.ok) {
+                throw new Error(result.error || result.errorMessage || `服务器返回异常 (${response.status})`);
+            }
+
+            if (result.data && result.data.taskId) {
+                currentTaskId = result.data.taskId;
+                const status = result.data.status || 'PENDING';
+                
+                document.getElementById('statusCard').style.display = 'block';
+                appendLog(`成功创建任务，获取到单号: ${currentTaskId}`);
+                
+                updateStatusUI(status);
+
+                if (status === 'FAILED') {
+                    throw new Error("后端服务并发超限，创建时直接落库失败。");
+                }
+
+                // 开启异步安全轮询
+                startPolling();
+            } else {
+                throw new Error("接口未能成功返回 taskId 标识");
+            }
+
+        } catch (err) {
+            showError(`创建请求落空: ${err.message}`);
+            submitBtn.disabled = false;
+            submitBtn.innerText = "立即生成图片";
+        }
+    }
+
+    function updateStatusUI(status) {
+        const badge = document.getElementById('statusBadge');
+        const progressBar = document.getElementById('progressBar');
+        badge.className = 'badge';
+        
+        const config = statusBadges[status] || { class: 'badge-pending', width: '15%', text: status };
+        badge.classList.add(config.class);
+        badge.innerText = config.text;
+        progressBar.style.width = config.width;
+    }
+
+    function startPolling() {
+        if (timer) clearInterval(timer);
+        timer = setInterval(pollTaskStatus, 2500); // 每 2.5 秒轮询一次上游状态
+    }
+
+    // 阶段 2：安全步进式轮询状态 (GET /image/task)
+    async function pollTaskStatus() {
+        if (!currentTaskId) return;
+
+        try {
+            const response = await fetch(`${BASE_URL}/image/task?taskId=${currentTaskId}`);
+            const result = await response.json();
+
+            if (!response.ok) throw new Error(result.error || result.errorMessage || "轮询遭遇中断");
+
+            const taskData = result.data;
+            const status = taskData.status;
+
+            updateStatusUI(status);
+            appendLog(`上游管道反馈状态 -> ${status}`);
+
+            if (status === 'COMPLETED') {
+                clearInterval(timer);
+                appendLog("✅ 任务完成，正在为您渲染画面...");
+                showResult(taskData);
+            } else if (status === 'FAILED') {
+                clearInterval(timer);
+                throw new Error(taskData.errorMessage || "未知上游渲染错误");
+            }
+
+        } catch (err) {
+            clearInterval(timer);
+            showError(`进度追踪失败: ${err.message}`);
+            document.getElementById('submitBtn').disabled = false;
+            document.getElementById('submitBtn').innerText = "立即生成图片";
+        }
+    }
+
+    // 阶段 3：成功渲染展示
+    function showResult(data) {
+        document.getElementById('statusCard').style.display = 'none';
+        document.getElementById('formCard').style.display = 'none';
+        document.getElementById('resultCard').style.display = 'block';
+
+        if (data.images && data.images.length > 0) {
+            document.getElementById('resultImage').src = data.images[0].url; // 图片 OBS 永久外链
+            document.getElementById('metaSize').innerHTML = `物理分辨率: <strong>${data.images[0].size}</strong>`;
+        }
+        document.getElementById('metaTaskId').innerHTML = `任务流水号: <strong>${data.taskId}</strong>`;
+        document.getElementById('metaCost').innerHTML = `结算金额: <strong>$${data.actualAmount !== null ? data.actualAmount : '0'} ${data.currency}</strong>`;
+    }
+
+    function resetForm() {
+        currentTaskId = null;
+        if (timer) clearInterval(timer);
+        document.getElementById('resultCard').style.display = 'none';
+        document.getElementById('statusCard').style.display = 'none';
+        document.getElementById('formCard').style.display = 'block';
+        
+        const submitBtn = document.getElementById('submitBtn');
+        submitBtn.disabled = false;
+        submitBtn.innerText = "立即生成图片";
+        document.getElementById('logBox').innerText = "准备就绪...";
+        clearError();
+    }
+</script>
+</body>
+</html>
