@@ -11,7 +11,7 @@
             width: 36px;
             height: 36px;
             border-radius: 50%;
-            border-left-color: #09f;
+            border-left-color: #4f46e5;
             animation: spin 1s linear infinite;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -36,7 +36,7 @@
             <div class="bg-slate-50 p-4 rounded-xl border border-slate-200/60 flex flex-col gap-3">
                 <div>
                     <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">网关 HTTP 触发器基地址</label>
-                    <input id="gatewayUrl" type="text" value="http://127.0.0.1:9000" placeholder="例如: https://your-gateway.com" class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500">
+                    <input id="gatewayUrl" type="text" value="https://fastapi-ea-yvanulknmx.cn-hangzhou.fcapp.run" placeholder="例如: https://your-gateway.com" class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500">
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">合法内置 Token 令牌</label>
@@ -127,7 +127,7 @@
             if(viewName === 'success') document.getElementById('statusSuccess').classList.remove('hidden');
         }
 
-        // 步骤 1：触发文生图任务
+        // 🌟 场景 5：发起任务（带全尺寸排错机制）
         async function startGeneration() {
             const baseUrl = document.getElementById('gatewayUrl').value.trim().replace(/\/$/, "");
             const token = document.getElementById('gatewayToken').value.trim();
@@ -154,8 +154,8 @@
             document.getElementById('generateBtn').innerText = '⏳ 正在排队调度...';
 
             try {
-                // 请求网关的场景 5 接口
-                const response = await fetch(`${baseUrl}/api/image/create`, {
+                // 自动适配双路由机制，请求 /image/create 
+                const response = await fetch(`${baseUrl}/image/create`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -166,13 +166,16 @@
 
                 const result = await response.json();
                 
-                if (response.ok && result.data && result.data.taskId) {
-                    const taskId = result.data.taskId;
+                // 🌟 核心排错重写：检查是否存在合法的返回路径
+                if (response.ok && result && (result.data?.taskId || result.taskId)) {
+                    const taskId = result.data?.taskId || result.taskId;
                     document.getElementById('taskIdDisplay').innerText = `Task ID: ${taskId}`;
-                    // 进入步骤 2：启动安全轮询探测
+                    // 进入安全轮询
                     startPolling(baseUrl, token, taskId);
                 } else {
-                    throw new Error(result.error || result.detail || '网关拒绝服务');
+                    // 🌟 如果上游报400，把真实的拒绝 JSON 信息扒出来展示在弹窗中
+                    const traceDetail = result.msg || result.message || result.error || JSON.stringify(result);
+                    throw new Error(`[上游服务拒绝] 原因: ${traceDetail}`);
                 }
             } catch (err) {
                 alert(`💥 发起失败: ${err.message}`);
@@ -180,39 +183,35 @@
             }
         }
 
-        // 步骤 2：网关安全轮询探测
+        // 🌟 场景 6：安全轮询探测区
         function startPolling(baseUrl, token, taskId) {
-            // 每隔 3 秒去网关刷一次状态
             pollingTimer = setInterval(async () => {
                 try {
-                    // 请求网关的场景 6 接口
-                    const response = await fetch(`${baseUrl}/api/image/task?taskId=${taskId}`, {
+                    const response = await fetch(`${baseUrl}/image/task?taskId=${taskId}`, {
                         method: 'GET',
                         headers: {
                             'X-Gateway-Token': token
                         }
                     });
 
-                    if (!response.ok) return; // 如果发生4xx/5xx网关抖动，忽略，等待下一次轮询
+                    if (!response.ok) return; 
 
                     const result = await response.json();
                     const targetData = result.data || result;
                     const status = String(targetData.status).toLowerCase();
 
-                    // 探测是否落盘成功且完成
                     if (status === 'completed' || status === 'success') {
                         clearInterval(pollingTimer);
                         clearInterval(elapsedTimer);
                         
-                        if (targetData.images && targetData.images.length > 0) {
-                            const rewriteUrl = targetData.images[0].url;
+                        const images = targetData.images || [];
+                        if (images.length > 0) {
+                            const rewriteUrl = images[0].url;
                             
-                            // 渲染最终安全重写的结果图片
                             const imgEl = document.getElementById('resultImage');
                             imgEl.src = rewriteUrl;
                             imgEl.onload = () => imgEl.classList.remove('opacity-0');
 
-                            // 写入审计元数据
                             document.getElementById('metaUrl').innerText = rewriteUrl;
                             document.getElementById('metaUrl').href = rewriteUrl;
                             document.getElementById('metaAmount').innerText = `${targetData.actualAmount || 0} ${targetData.currency || 'USD'}`;
@@ -220,7 +219,7 @@
 
                             switchView('success');
                         } else {
-                            alert('❌ 网关返回成功，但未解析到合法的图片直链结构。');
+                            alert('❌ 网关返回成功，但未解析到合法的 images[0].url 数据。');
                             resetState();
                         }
                         document.getElementById('generateBtn').disabled = false;
@@ -228,11 +227,11 @@
                     } else if (status === 'failed' || status === 'error') {
                         clearInterval(pollingTimer);
                         clearInterval(elapsedTimer);
-                        alert(`❌ 云端任务生成失败: ${targetData.errorMessage || '未知错误'}`);
+                        alert(`❌ 云端任务生成失败: ${targetData.errorMessage || targetData.msg || '未知上游错误'}`);
                         resetState();
                     }
                 } catch (e) {
-                    console.error('轮询网关中途出现异常(已自动忽略续航):', e);
+                    console.error('轮询执行中发生了网络抖动(已自动续航探测):', e);
                 }
             }, 3000);
         }
