@@ -1,0 +1,1671 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>模型广场 · 通用文/图生图控制台</title>
+
+<!-- ========================================
+     🌟 手动配置区
+     ======================================== -->
+<script>
+// 后端网关地址（必填）
+const GATEWAY_URL = 'https://image-bpcblkhiqw.cn-hangzhou.fcapp.run';
+
+// 默认账号密码（可选，留空则需用户手动填写）
+const DEFAULT_USERNAME = '';
+const DEFAULT_PASSWORD = '';
+</script>
+<!-- ======================================== -->
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: linear-gradient(135deg, #1a1f3a 0%, #2d1b4e 100%);
+    color: #e8eaed; min-height: 100vh; padding: 16px;
+  }
+  .container { max-width: 1400px; margin: 0 auto; }
+  /* 公告栏 */
+  .announcement {
+    padding: 10px 16px; margin-bottom: 12px;
+    background: linear-gradient(135deg, rgba(139,124,255,0.15), rgba(183,148,246,0.1));
+    border: 1px solid rgba(139,124,255,0.3);
+    border-radius: 10px; font-size: 13px; color: #e8eaed;
+    line-height: 1.6; display: none;
+  }
+  .announcement.show { display: block; }
+  .announcement .icon { display: inline-block; margin-right: 6px; }
+  .announcement .close-btn {
+    float: right; cursor: pointer; opacity: 0.6; padding: 0 6px;
+    font-size: 16px; line-height: 1; transition: opacity 0.2s;
+  }
+  .announcement .close-btn:hover { opacity: 1; }
+  header {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 16px;
+    padding: 12px 20px; background: rgba(255,255,255,0.05);
+    backdrop-filter: blur(10px); border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  header h1 { font-size: 20px; font-weight: 600; }
+  header .subtitle { color: #9aa0a6; font-size: 13px; margin-left: auto; }
+  .panel {
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px; padding: 16px; margin-bottom: 16px;
+  }
+  .panel h2 {
+    font-size: 14px; font-weight: 600; color: #c5b3ff;
+    margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
+  }
+  .panel h2 .dot { width: 8px; height: 8px; border-radius: 50%; background: #c5b3ff; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .field { flex: 1; min-width: 200px; }
+  .field label {
+    display: block; font-size: 12px; color: #9aa0a6;
+    margin-bottom: 6px; font-weight: 500;
+  }
+  input[type="text"], input[type="password"], input[type="number"], textarea, select {
+    width: 100%; padding: 10px 12px; background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;
+    color: #e8eaed; font-size: 13px; font-family: inherit;
+    transition: border-color 0.2s;
+  }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: #8b7cff; }
+  textarea { resize: vertical; min-height: 80px; }
+  button {
+    padding: 10px 18px; background: linear-gradient(135deg, #8b7cff, #b794f6);
+    color: #fff; border: none; border-radius: 8px; font-size: 13px;
+    font-weight: 600; cursor: pointer; transition: transform 0.1s, box-shadow 0.2s;
+  }
+  button:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(139,124,255,0.4); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.secondary { background: rgba(255,255,255,0.1); }
+  button.danger { background: linear-gradient(135deg, #ff6b6b, #ee5a52); }
+  button.small { padding: 6px 12px; font-size: 12px; }
+  .grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; }
+  @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } }
+
+  .status-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 500;
+  }
+  .status-badge.ok { background: rgba(72,187,120,0.2); color: #68d391; }
+  .status-badge.fail { background: rgba(245,101,101,0.2); color: #fc8181; }
+  .status-badge.pending { background: rgba(237,137,54,0.2); color: #f6ad55; }
+  .status-badge .pulse {
+    width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+
+  .upload-zone {
+    border: 2px dashed rgba(255,255,255,0.2); border-radius: 10px;
+    padding: 24px; text-align: center; cursor: pointer; transition: all 0.2s;
+    background: rgba(0,0,0,0.2);
+  }
+  .upload-zone:hover, .upload-zone.dragover {
+    border-color: #8b7cff; background: rgba(139,124,255,0.1);
+  }
+  .upload-zone .icon { font-size: 32px; margin-bottom: 8px; }
+  .upload-zone .hint { color: #9aa0a6; font-size: 12px; margin-top: 4px; }
+
+  .image-list {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 10px; margin-top: 12px;
+  }
+  .image-list:empty { display: none; }
+  .img-card {
+    position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden;
+    background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1);
+  }
+  .img-card img { width: 100%; height: 100%; object-fit: cover; }
+  .img-card .meta {
+    position: absolute; inset: auto 0 0 0; padding: 4px 6px;
+    background: linear-gradient(transparent, rgba(0,0,0,0.85));
+    font-size: 10px; color: #e8eaed;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .img-card .remove {
+    position: absolute; top: 4px; right: 4px; width: 22px; height: 22px;
+    border-radius: 50%; background: rgba(0,0,0,0.7); border: none;
+    color: #fff; cursor: pointer; font-size: 14px; line-height: 1;
+    padding: 0; display: flex; align-items: center; justify-content: center;
+  }
+  .img-card .remove:hover { background: #ff6b6b; }
+  .img-card .uploading {
+    position: absolute; inset: 0; background: rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center;
+    color: #c5b3ff; font-size: 11px;
+  }
+
+  .log-panel { display: flex; flex-direction: column; height: 600px; }
+  .log-header {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+  }
+  .log-header .filters { margin-left: auto; display: flex; gap: 4px; }
+  .log-header .filters button {
+    padding: 4px 10px; font-size: 11px; background: rgba(255,255,255,0.06);
+    border-radius: 6px;
+  }
+  .log-header .filters button.active { background: #8b7cff; }
+  .log-window {
+    flex: 1; overflow-y: auto; background: #0d1117; border-radius: 8px;
+    padding: 10px; font-family: 'Consolas', 'Monaco', monospace; font-size: 12px;
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  .log-window::-webkit-scrollbar { width: 8px; }
+  .log-window::-webkit-scrollbar-track { background: transparent; }
+  .log-window::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
+
+  .log-line {
+    padding: 4px 6px; border-radius: 4px; margin-bottom: 2px;
+    word-break: break-all; line-height: 1.5;
+  }
+  .log-line .ts { color: #6b7280; margin-right: 8px; }
+  .log-line.info { color: #93c5fd; }
+  .log-line.success { color: #6ee7b7; background: rgba(110,231,183,0.05); }
+  .log-line.error { color: #fca5a5; background: rgba(252,165,165,0.05); }
+  .log-line.warn { color: #fcd34d; }
+  .log-line.req { color: #c4b5fd; }
+  .log-line.res { color: #a7f3d0; }
+  .log-line .body {
+    margin-top: 4px; padding: 6px 8px; background: rgba(0,0,0,0.4);
+    border-radius: 4px; color: #d1d5db; white-space: pre-wrap; font-size: 11px;
+  }
+
+  .result-area {
+    margin-top: 12px; padding: 12px; background: rgba(0,0,0,0.3);
+    border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);
+  }
+  .result-area.empty { display: none; }
+  .result-images {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 10px; margin-top: 10px;
+  }
+  .result-images img {
+    width: 100%; border-radius: 8px; cursor: pointer;
+    transition: transform 0.2s;
+  }
+  .result-images img:hover { transform: scale(1.02); }
+
+  .progress-bar {
+    height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px;
+    overflow: hidden; margin-top: 8px;
+  }
+  .progress-bar .fill {
+    height: 100%; background: linear-gradient(90deg, #8b7cff, #b794f6);
+    transition: width 0.3s; width: 0;
+  }
+
+  .toggle-row { display: flex; gap: 16px; align-items: center; margin-top: 8px; }
+  .toggle-row label { font-size: 12px; color: #c5b3ff; cursor: pointer; }
+  .toggle-row input[type="checkbox"] { margin-right: 4px; vertical-align: middle; }
+
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+    display: none; align-items: center; justify-content: center; z-index: 100;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal-overlay img { max-width: 90vw; max-height: 90vh; border-radius: 8px; }
+
+  /* 历史记录抽屉 */
+  header .header-btn {
+    padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.1);
+    border-radius: 8px; cursor: pointer; border: none; color: #e8eaed;
+  }
+  header .header-btn:hover { background: rgba(139,124,255,0.3); }
+  .drawer-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    display: none; z-index: 90;
+  }
+  .drawer-overlay.show { display: block; }
+  .drawer {
+    position: fixed; top: 0; right: -520px; width: 500px; max-width: 90vw; height: 100vh;
+    background: #1a1f3a; border-left: 1px solid rgba(255,255,255,0.1);
+    box-shadow: -8px 0 32px rgba(0,0,0,0.5);
+    transition: right 0.25s ease; z-index: 95;
+    display: flex; flex-direction: column;
+  }
+  .drawer.show { right: 0; }
+  .drawer-header {
+    padding: 14px 18px; border-bottom: 1px solid rgba(255,255,255,0.08);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .drawer-header h3 { font-size: 15px; font-weight: 600; }
+  .drawer-header .close { margin-left: auto; cursor: pointer; }
+  .drawer-storage {
+    padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.08);
+    background: rgba(0,0,0,0.2);
+  }
+  .drawer-storage .storage-row {
+    display: flex; gap: 6px; align-items: center; margin-bottom: 6px;
+  }
+  .drawer-storage input {
+    flex: 1; padding: 6px 10px; font-size: 12px;
+    background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px; color: #e8eaed; font-family: 'Consolas', monospace;
+  }
+  .drawer-storage button.small { padding: 6px 10px; font-size: 11px; }
+  .drawer-storage .hint {
+    font-size: 11px; color: #9aa0a6; margin-top: 4px; line-height: 1.5;
+  }
+  .drawer-storage .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+
+  .drawer-list { flex: 1; overflow-y: auto; padding: 10px 14px; }
+  .drawer-list:empty::after {
+    content: '暂无历史记录'; display: block; text-align: center;
+    color: #6b7280; font-size: 13px; padding: 40px 0;
+  }
+  .history-item {
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px; padding: 10px; margin-bottom: 10px;
+  }
+  .history-item.failed { border-color: rgba(252,165,165,0.3); }
+  .history-item .row1 {
+    display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px;
+  }
+  .history-item .ts {
+    font-size: 11px; color: #9aa0a6; font-family: 'Consolas', monospace;
+  }
+  .history-item .badges { display: flex; gap: 4px; flex-wrap: wrap; margin-left: auto; }
+  .history-item .badge {
+    font-size: 10px; padding: 2px 6px; border-radius: 4px;
+    background: rgba(139,124,255,0.2); color: #c5b3ff;
+  }
+  .history-item .badge.failed { background: rgba(252,165,165,0.2); color: #fca5a5; }
+  .history-item .prompt {
+    font-size: 12px; color: #e8eaed; line-height: 1.5; margin-bottom: 8px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden; word-break: break-all;
+  }
+  .history-item .thumbs {
+    display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px;
+  }
+  .history-item .thumbs img {
+    width: 56px; height: 56px; object-fit: cover; border-radius: 6px;
+    cursor: pointer; border: 1px solid rgba(255,255,255,0.1);
+  }
+  .history-item .thumbs .ref-tag {
+    position: relative; display: inline-block;
+  }
+  .history-item .thumbs .ref-tag::before {
+    content: '参'; position: absolute; top: 2px; left: 2px; z-index: 1;
+    background: rgba(0,0,0,0.7); color: #c5b3ff;
+    font-size: 9px; padding: 1px 4px; border-radius: 3px;
+  }
+  .history-item .actions { display: flex; gap: 6px; }
+  .history-item .actions button { padding: 5px 10px; font-size: 11px; }
+  .history-item .actions button.ghost {
+    background: rgba(255,255,255,0.06); color: #c5b3ff;
+  }
+  .history-item .actions button.del {
+    background: rgba(252,165,165,0.15); color: #fca5a5; margin-left: auto;
+  }
+  .history-item .err-msg {
+    font-size: 11px; color: #fca5a5; margin-bottom: 6px;
+    padding: 4px 6px; background: rgba(252,165,165,0.05); border-radius: 4px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <!-- 公告栏 -->
+  <div class="announcement" id="announcement">
+    <span class="close-btn" id="closeAnnouncement" title="关闭">✕</span>
+    <span class="icon">📢</span>
+    <span id="announcementText"></span>
+  </div>
+
+  <header>
+    <h1>🎨 模型广场 · 通用文/图生图控制台</h1>
+    <span class="subtitle">多模型支持 · OBS 直链 · 实时日志</span>
+    <button class="header-btn" id="btnHistory">📜 历史记录 <span id="historyCount" style="opacity:0.7;"></span></button>
+  </header>
+
+  <!-- 账号登录 -->
+  <div class="panel">
+    <h2><span class="dot"></span>账号登录</h2>
+    <!-- 隐藏的网关地址字段，由 JS 自动设置为当前域名 -->
+    <input type="hidden" id="gatewayUrl">
+    <div class="row">
+      <div class="field" style="flex:1;">
+        <label>账号 (X-Username)</label>
+        <input type="text" id="gatewayUsername" placeholder="用户名">
+      </div>
+      <div class="field" style="flex:1;">
+        <label>密码 (X-Password)</label>
+        <input type="password" id="gatewayPassword" placeholder="密码">
+      </div>
+      <div class="field" style="flex:0 0 auto; display:flex; align-items:flex-end; gap:8px;">
+        <button id="btnVerify">验证连接</button>
+        <span id="verifyStatus" class="status-badge pending"><span class="pulse"></span>未验证</span>
+      </div>
+    </div>
+    <div class="toggle-row">
+      <label><input type="checkbox" id="rememberCfg" checked>记住配置（存于浏览器 localStorage）</label>
+    </div>
+  </div>
+
+  <div class="grid">
+    <!-- 左侧：参数 + 上传 -->
+    <div>
+      <div class="panel">
+        <h2><span class="dot"></span>参考图（可选，最多 10 张 · 留空即文生图）</h2>
+        <input type="file" id="fileInput" accept="image/*" multiple style="display:none;">
+        <div class="upload-zone" id="uploadZone">
+          <div class="icon">📤</div>
+          <div>点击或拖拽图片到此处</div>
+          <div class="hint">上传后将自动写入 OBS 并生成直链</div>
+        </div>
+        <div class="image-list" id="imageList"></div>
+      </div>
+
+      <div class="panel">
+        <h2><span class="dot"></span>生成参数</h2>
+        <div class="row" style="margin-bottom:10px;">
+          <div class="field">
+            <label>模型 model</label>
+            <select id="model">
+              <option value="nano-banana-2" selected>nano-banana-2（文/图生图）</option>
+              <option value="seedream5-lite">seedream5-lite（文/图生图）</option>
+              <option value="gpt-image-2">gpt-image-2（文/图生图）</option>
+            </select>
+          </div>
+        </div>
+        <div id="modelHint" style="font-size:11px; color:#c5b3ff; margin-bottom:10px; padding:8px 10px; background:rgba(139,124,255,0.08); border-radius:6px; line-height:1.5;"></div>
+
+        <div class="field" style="margin-bottom:10px;">
+          <label>提示词 prompt（必填，最长 1200）</label>
+          <textarea id="prompt" placeholder="例如：把背景换成灰色，电影感光线"></textarea>
+        </div>
+
+        <div class="row">
+          <!-- 尺寸：根据模型动态切换 input+datalist 或 select -->
+          <div class="field" id="field-size">
+            <label>尺寸 size</label>
+            <div style="display:flex; gap:6px; align-items:center;">
+              <input type="text" id="size" list="sizeOptions" placeholder="留空即默认" autocomplete="off" style="display:none; flex:1;">
+              <select id="sizeSelect" style="display:none; flex:1;"></select>
+              <button type="button" id="btnClearSize" class="secondary small" title="清空尺寸">清空</button>
+            </div>
+            <datalist id="sizeOptions"></datalist>
+          </div>
+          <!-- 宽高比：仅 nano-banana-2 -->
+          <div class="field" id="field-ratio">
+            <label>宽高比 ratio</label>
+            <select id="ratio">
+              <option value="" selected>不指定</option>
+              <option value="1:1">1:1</option>
+              <option value="16:9">16:9</option>
+              <option value="9:16">9:16</option>
+              <option value="4:3">4:3</option>
+              <option value="3:4">3:4</option>
+              <option value="21:9">21:9</option>
+            </select>
+          </div>
+          <div class="field" id="field-seed">
+            <label>seed（随机种子）</label>
+            <input type="number" id="seed" placeholder="可留空">
+          </div>
+          <div class="field" id="field-num">
+            <label>生成数量</label>
+            <select id="num">
+              <option value="1" selected>1 张</option>
+              <option value="2">2 张</option>
+              <option value="3">3 张</option>
+              <option value="4">4 张</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:10px;">
+          <!-- 质量：仅 gpt-image-2 -->
+          <div class="field" id="field-quality">
+            <label>质量 quality</label>
+            <select id="quality">
+              <option value="" selected>不指定</option>
+              <option value="auto">auto</option>
+              <option value="low">low</option>
+              <option value="medium">medium</option>
+              <option value="high">high</option>
+            </select>
+          </div>
+          <!-- 背景：仅 gpt-image-2 -->
+          <div class="field" id="field-background">
+            <label>背景 background</label>
+            <select id="background">
+              <option value="" selected>不指定</option>
+              <option value="auto">auto</option>
+              <option value="opaque">opaque</option>
+              <option value="transparent">transparent</option>
+            </select>
+          </div>
+          <!-- 输出格式：seedream5-lite / gpt-image-2 -->
+          <div class="field" id="field-outputFormat">
+            <label>输出格式 outputFormat</label>
+            <select id="outputFormat">
+              <option value="" selected>不指定</option>
+              <option value="jpeg">jpeg</option>
+              <option value="png">png</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="font-size:11px; color:#9aa0a6; margin-top:6px;">
+          💡 size 与 ratio 互斥（ratio 仅 nano-banana-2 支持）。size 可填关键字或 {width}x{height} 像素值。
+        </div>
+        <div class="toggle-row" id="field-watermark">
+          <label><input type="checkbox" id="watermark">添加水印（Seedream 系列生效，gpt-image 忽略）</label>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:14px;">
+          <button id="btnGenerate" disabled>🚀 开始生成</button>
+          <button id="btnCancel" class="danger small" style="display:none;">取消轮询</button>
+        </div>
+        <div class="progress-bar" id="progressBar" style="display:none;"><div class="fill" id="progressFill"></div></div>
+      </div>
+
+      <div class="panel result-area empty" id="resultArea">
+        <h2><span class="dot"></span>生成结果</h2>
+        <div id="resultMeta" style="font-size:12px; color:#9aa0a6; margin-bottom:6px;"></div>
+        <div class="result-images" id="resultImages"></div>
+      </div>
+    </div>
+
+    <!-- 右侧：日志 -->
+    <div class="panel log-panel">
+      <div class="log-header">
+        <h2 style="margin:0;"><span class="dot"></span>实时日志</h2>
+        <div class="filters">
+          <button data-f="all" class="active">全部</button>
+          <button data-f="info">INFO</button>
+          <button data-f="req">请求</button>
+          <button data-f="res">响应</button>
+          <button data-f="error">错误</button>
+        </div>
+        <button class="small secondary" id="btnClearLog">清空</button>
+      </div>
+      <div class="log-window" id="logWindow"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal"><img id="modalImg" alt=""></div>
+
+<!-- 历史记录抽屉 -->
+<div class="drawer-overlay" id="drawerOverlay"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-header">
+    <h3>📜 生成历史</h3>
+    <button class="header-btn close" id="btnCloseDrawer">关闭 ✕</button>
+  </div>
+  <div class="drawer-storage">
+    <div style="font-size:12px; color:#c5b3ff; margin-bottom:6px; font-weight:500;">存储位置</div>
+    <div class="storage-row">
+      <input type="text" id="storageKey" placeholder="存储槽 key（默认 default）">
+      <button class="small secondary" id="btnSwitchSlot">切换</button>
+    </div>
+    <div class="hint">
+      💾 历史记录存于浏览器 localStorage，key = <code>nanobanana_history_&lt;槽名&gt;</code><br>
+      想换"存储位置"？改槽名即可（不同槽各自独立）。要存到磁盘任意路径用「导出」。
+    </div>
+    <div class="actions">
+      <button class="small" id="btnExportHistory">⬇ 导出 JSON</button>
+      <button class="small secondary" id="btnImportHistory">⬆ 导入 JSON</button>
+      <button class="small danger" id="btnClearHistory">🗑 清空当前槽</button>
+      <input type="file" id="importFile" accept="application/json,.json" style="display:none;">
+    </div>
+  </div>
+  <div class="drawer-list" id="historyList"></div>
+</aside>
+<script>
+/* ========== 状态 ========== */
+const state = {
+  gateway: '',
+  username: '',
+  password: '',
+  verified: false,
+  uploaded: [],   // {name, url, key, uploading, progress}
+  polling: false,
+  pollTimer: null,
+  taskId: null,
+  logFilter: 'all',
+  // 历史记录
+  storageSlot: 'default',  // 当前存储槽名
+  history: [],             // 当前槽加载的历史数组（最新在前）
+  currentRequest: null,    // 当前生成请求的快照，用于完成后写入历史
+};
+
+/* ========== DOM 引用 ========== */
+const $ = (id) => document.getElementById(id);
+const els = {
+  announcement: $('announcement'), announcementText: $('announcementText'), closeAnnouncement: $('closeAnnouncement'),
+  gw: $('gatewayUrl'), username: $('gatewayUsername'), password: $('gatewayPassword'), remember: $('rememberCfg'),
+  btnVerify: $('btnVerify'), verifyStatus: $('verifyStatus'),
+  fileInput: $('fileInput'), uploadZone: $('uploadZone'), imageList: $('imageList'),
+  prompt: $('prompt'), model: $('model'), size: $('size'), sizeSelect: $('sizeSelect'), ratio: $('ratio'), seed: $('seed'), num: $('num'), watermark: $('watermark'),
+  quality: $('quality'), background: $('background'), outputFormat: $('outputFormat'),
+  sizeOptions: $('sizeOptions'), modelHint: $('modelHint'), btnClearSize: $('btnClearSize'),
+  fieldSize: $('field-size'), fieldRatio: $('field-ratio'), fieldSeed: $('field-seed'),
+  fieldQuality: $('field-quality'), fieldBackground: $('field-background'),
+  fieldOutputFormat: $('field-outputFormat'), fieldWatermark: $('field-watermark'),
+  btnGenerate: $('btnGenerate'), btnCancel: $('btnCancel'),
+  progressBar: $('progressBar'), progressFill: $('progressFill'),
+  resultArea: $('resultArea'), resultMeta: $('resultMeta'), resultImages: $('resultImages'),
+  logWindow: $('logWindow'), btnClearLog: $('btnClearLog'),
+  modal: $('modal'), modalImg: $('modalImg'),
+  // 历史
+  btnHistory: $('btnHistory'), historyCount: $('historyCount'),
+  drawer: $('drawer'), drawerOverlay: $('drawerOverlay'),
+  btnCloseDrawer: $('btnCloseDrawer'),
+  storageKey: $('storageKey'), btnSwitchSlot: $('btnSwitchSlot'),
+  btnExportHistory: $('btnExportHistory'), btnImportHistory: $('btnImportHistory'),
+  btnClearHistory: $('btnClearHistory'), importFile: $('importFile'),
+  historyList: $('historyList'),
+};
+
+/* ========== 模型配置（对齐模型广场 API 文档） ==========
+   fields: 该模型支持并展示的参数字段
+   sizes:  size 输入框的候选项（datalist 或 select 选项）
+   useSelectForSize: true 表示 size 用 select 下拉框，false/undefined 表示用 input+datalist
+   hint:   参数说明文案
+*/
+const MODEL_CONFIG = {
+  'nano-banana-2': {
+    fields: ['size', 'ratio', 'seed', 'watermark'],
+    sizes: ['512', '1K', '2K', '4K'],
+    useSelectForSize: true,  // 使用 select 下拉框
+    hint: '🍌 nano-banana-2：支持 size（512/1K/2K/4K 或不指定）或 ratio（16:9/4:3/1:1/3:4/9:16/21:9），两者互斥。支持文生图与图生图。',
+  },
+  'seedream5-lite': {
+    fields: ['size', 'seed', 'watermark', 'outputFormat'],
+    sizes: [
+      '2K', '3K', '4K',
+      // 16:9 宽高比（2K/4K）
+      '2560x1440 (16:9·2K)', '3840x2160 (16:9·4K)',
+      // 9:16 宽高比（2K/4K）
+      '1440x2560 (9:16·2K)', '2160x3840 (9:16·4K)',
+      // 4:3 宽高比（2K/4K）
+      '2560x1920 (4:3·2K)', '3840x2880 (4:3·4K)',
+      // 3:4 宽高比（2K/4K）
+      '1920x2560 (3:4·2K)', '2880x3840 (3:4·4K)',
+      // 1:1 宽高比（2K/4K）
+      '2560x2560 (1:1·2K)', '3200x3200 (1:1·4K)',
+      // 21:9 宽高比（2K/4K）
+      '2688x1152 (21:9·2K)', '4480x1920 (21:9·4K)',
+    ],
+    hint: '🌊 seedream5-lite：size 支持 2K/3K/4K 或 {width}x{height}（像素总量 [3,686,400 ~ 10,404,496]，宽高比 [1/16,16]）。outputFormat 支持 jpeg/png，watermark 生效。',
+  },
+  'gpt-image-2': {
+    fields: ['size', 'seed', 'quality', 'background', 'outputFormat'],
+    sizes: [
+      'auto',
+      // 16:9 宽高比（1K/2K/4K）
+      '1280x720 (16:9·1K)', '2048x1152 (16:9·2K)', '3840x2160 (16:9·4K)',
+      // 9:16 宽高比（1K/2K/4K）
+      '720x1280 (9:16·1K)', '1152x2048 (9:16·2K)', '2160x3840 (9:16·4K)',
+      // 4:3 宽高比（1K/2K/4K）
+      '1024x768 (4:3·1K)', '2048x1536 (4:3·2K)', '3200x2400 (4:3·4K)',
+      // 3:4 宽高比（1K/2K/4K）
+      '768x1024 (3:4·1K)', '1536x2048 (3:4·2K)', '2400x3200 (3:4·4K)',
+      // 1:1 宽高比（1K/2K/4K）
+      '1024x1024 (1:1·1K)', '2048x2048 (1:1·2K)', '2880x2880 (1:1·4K)',
+      // 21:9 宽高比（1K/2K/4K）
+      '1344x576 (21:9·1K)', '2016x864 (21:9·2K)', '4032x1728 (21:9·4K)',
+    ],
+    hint: '🤖 gpt-image-2：size 支持 auto 或 {width}x{height}（像素总量 [655360 ~ 8294400]，宽高比 [1/3,3]，宽高必须为 16px 的倍数）。支持 quality/background/outputFormat，watermark 被忽略。',
+  },
+};
+
+/* 根据当前选中模型，动态显示/隐藏参数字段并刷新候选项 */
+function applyModelConfig() {
+  const model = els.model.value;
+  const cfg = MODEL_CONFIG[model] || MODEL_CONFIG['nano-banana-2'];
+
+  // 字段名 → 对应的容器元素
+  const fieldMap = {
+    size: els.fieldSize, ratio: els.fieldRatio, seed: els.fieldSeed,
+    quality: els.fieldQuality, background: els.fieldBackground,
+    outputFormat: els.fieldOutputFormat, watermark: els.fieldWatermark,
+  };
+  Object.entries(fieldMap).forEach(([name, el]) => {
+    if (!el) return;
+    el.style.display = cfg.fields.includes(name) ? '' : 'none';
+  });
+
+  // 根据 useSelectForSize 决定使用 select 还是 input+datalist
+  if (cfg.useSelectForSize) {
+    // 使用 select 下拉框
+    els.size.style.display = 'none';
+    els.sizeSelect.style.display = '';
+    els.sizeSelect.innerHTML = '<option value="">不指定</option>' +
+      (cfg.sizes || []).map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+  } else {
+    // 使用 input + datalist
+    els.size.style.display = '';
+    els.sizeSelect.style.display = 'none';
+    els.sizeOptions.innerHTML = (cfg.sizes || [])
+      .map(s => `<option value="${escapeHtml(s)}">`).join('');
+  }
+
+  // 说明文案
+  els.modelHint.textContent = cfg.hint || '';
+}
+
+/* ========== 公告栏 ========== */
+async function loadAnnouncement() {
+  try {
+    const res = await fetch('./message.txt', { cache: 'no-cache' });
+    if (!res.ok) return;  // 文件不存在或无法访问，静默跳过
+    const text = await res.text();
+    const content = text.trim();
+    if (!content) return;  // 空文件不显示
+    els.announcementText.textContent = content;
+    els.announcement.classList.add('show');
+  } catch (e) {
+    // 加载失败静默处理（文件不存在是正常情况）
+  }
+}
+
+/* ========== 日志 ========== */
+function log(level, msg, body) {
+  const ts = new Date().toLocaleTimeString('zh-CN', { hour12: false }) + '.' +
+             String(new Date().getMilliseconds()).padStart(3, '0');
+  const line = document.createElement('div');
+  line.className = 'log-line ' + level;
+  line.dataset.level = level;
+  let html = `<span class="ts">[${ts}]</span>${escapeHtml(msg)}`;
+  if (body !== undefined) {
+    const txt = typeof body === 'string' ? body : JSON.stringify(body, null, 2);
+    html += `<div class="body">${escapeHtml(txt)}</div>`;
+  }
+  line.innerHTML = html;
+  if (state.logFilter !== 'all' && level !== state.logFilter) line.style.display = 'none';
+  els.logWindow.appendChild(line);
+  els.logWindow.scrollTop = els.logWindow.scrollHeight;
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* 检测阿里云 FC 平台层错误。返回 true 说明这是 FC 平台错误而不是业务错误。*/
+function detectFcError(body) {
+  if (!body || typeof body !== 'object') return null;
+  if (body.Code && body.RequestId && body.Message) {
+    return { code: body.Code, message: body.Message };
+  }
+  return null;
+}
+
+/* ========== 配置持久化 ========== */
+function loadCfg() {
+  try {
+    const cfg = JSON.parse(localStorage.getItem('nanobanana_cfg') || '{}');
+    if (cfg.gateway) els.gw.value = cfg.gateway;
+    if (cfg.username) els.username.value = cfg.username;
+    if (cfg.password) els.password.value = cfg.password;
+  } catch (e) {}
+}
+function saveCfg() {
+  if (!els.remember.checked) { localStorage.removeItem('nanobanana_cfg'); return; }
+  localStorage.setItem('nanobanana_cfg', JSON.stringify({
+    gateway: els.gw.value.trim(),
+    username: els.username.value.trim(),
+    password: els.password.value.trim(),
+  }));
+}
+
+/* ========== 网关验证 ========== */
+function setVerifyStatus(s, text) {
+  els.verifyStatus.className = 'status-badge ' + s;
+  els.verifyStatus.innerHTML = (s === 'pending' ? '<span class="pulse"></span>' : '') + text;
+  state.verified = (s === 'ok');
+  els.btnGenerate.disabled = !state.verified;
+}
+
+async function verifyGateway() {
+  const gw = els.gw.value.trim().replace(/\/$/, '');
+  const username = els.username.value.trim();
+  const password = els.password.value.trim();
+  if (!gw || !username || !password) { log('error', '⚠️ 请先填写网关地址、账号与密码'); setVerifyStatus('fail','配置缺失'); return; }
+  state.gateway = gw; state.username = username; state.password = password;
+  setVerifyStatus('pending', '验证中…');
+  log('info', `🔍 正在验证网关：${gw} (用户: ${username})`);
+
+  // 改用明确的 API 路径验证，避免 Vercel 等静态托管返回 HTML
+  // 优先尝试 /api 前缀路由，如果失败再尝试无前缀路由
+  try {
+    let res, txt, body;
+
+    // 先尝试 /api/nanobanana/task
+    res = await fetch(`${gw}/api/nanobanana/task?taskId=__verify__`, {
+      method: 'GET',
+      headers: {
+        'X-Username': username,
+        'X-Password': password
+      },
+    });
+    txt = await res.text();
+
+    // 如果返回 404 HTML，尝试无前缀路由
+    if (res.status === 404 && txt.includes('NOT_FOUND')) {
+      log('warn', '⚠️ /api 路径返回 404，尝试无前缀路由 /nanobanana/task');
+      res = await fetch(`${gw}/nanobanana/task?taskId=__verify__`, {
+        method: 'GET',
+        headers: {
+          'X-Username': username,
+          'X-Password': password
+        },
+      });
+      txt = await res.text();
+    }
+
+    try { body = JSON.parse(txt); } catch { body = txt; }
+
+    // 检测是否返回了 HTML 页面（说明路径错误或网关配置错误）
+    const isHtmlResponse = typeof body === 'string' && body.trim().startsWith('<');
+    if (isHtmlResponse) {
+      setVerifyStatus('fail', '网关地址错误');
+      log('error', '❌ 网关返回 HTML 页面而不是 API，请检查网关地址是否正确');
+      log('error', '提示：网关地址应该是后端 API 地址（如 https://xxx.fcapp.run），而不是前端页面地址');
+      return;
+    }
+
+    // 只在非预期响应时才记录详细日志（避免显示预期的 400 错误）
+    const isExpectedError = res.status === 400 &&
+      (body?.msg?.includes('taskId') || body?.msg?.includes('不存在'));
+
+    if (!isExpectedError) {
+      log('res', `← GET /api/nanobanana/task 状态码 ${res.status}`, body);
+    }
+
+    // 阿里云 FC 平台层错误（容器启动失败、超时等）
+    const fcErr = (typeof body === 'object' && body && (body.Code || body.RequestId)) ? body.Code : null;
+    if (fcErr) {
+      setVerifyStatus('fail', `FC 错误：${fcErr}`);
+      log('error', `❌ 阿里云 FC 平台返回错误：${fcErr}`);
+      if (fcErr === 'CAExited' || /no such file/i.test(txt)) {
+        log('error', '🛠 容器启动失败：/code/main.py 不存在。请把最新代码重新打包上传到函数计算。');
+      }
+      return;
+    }
+    if (res.status === 401 || res.status === 403) {
+      setVerifyStatus('fail', '账号或密码错误');
+      log('error', '❌ 网关返回 401/403，账号或密码无效');
+      return;
+    }
+    // API 端点的合理响应：200/400/404/500（只要能通信且认证通过就算成功）
+    if ([200, 400, 404, 500].includes(res.status)) {
+      setVerifyStatus('ok', '已连接');
+      log('success', '✅ 网关连接正常，账号密码有效');
+      saveCfg();
+      return;
+    }
+    // 其他状态码（412/502/503 等）都视为部署异常
+    setVerifyStatus('fail', `异常 ${res.status}`);
+    log('error', `❌ 网关返回非预期状态码 ${res.status}，可能是 FC 实例未正常启动`);
+  } catch (e) {
+    setVerifyStatus('fail', '连接失败');
+    log('error', `❌ 无法连接网关：${e.message}`);
+  }
+}
+
+/* ========== 图片上传到 OBS ========== */
+async function uploadFiles(files) {
+  if (!state.verified) { log('error', '⚠️ 请先验证网关'); return; }
+  const remaining = 10 - state.uploaded.length;
+  if (remaining <= 0) { log('warn', '⚠️ 已达 10 张上限'); return; }
+  const list = Array.from(files).slice(0, remaining);
+
+  for (const f of list) {
+    if (!f.type.startsWith('image/')) { log('warn', `跳过非图片：${f.name}`); continue; }
+    const item = { name: f.name, url: '', key: '', uploading: true, progress: 0, _id: Math.random().toString(36).slice(2) };
+    item.localPreview = URL.createObjectURL(f);
+    state.uploaded.push(item);
+    renderImageList();
+
+    log('req', `→ POST / 上传 ${f.name} (${(f.size/1024).toFixed(1)}KB)`);
+    try {
+      const buf = await f.arrayBuffer();
+      const res = await fetch(`${state.gateway}/`, {
+        method: 'POST',
+        headers: {
+          'X-Username': state.username,
+          'X-Password': state.password,
+          'X-File-Name': encodeURIComponent(f.name),
+          'Content-Type': 'application/octet-stream',
+        },
+        body: buf,
+      });
+      const data = await res.json();
+      const fcErr = detectFcError(data);
+      if (fcErr) {
+        item.uploading = false;
+        item.error = `FC: ${fcErr.code}`;
+        log('error', `❌ FC 平台错误：${fcErr.code}`, data);
+        if (fcErr.code === 'CAExited') log('error', '🛠 函数实例启动失败，请重新部署 main.py 到 FC');
+      } else if (res.ok && data.success) {
+        item.url = data.direct_url;
+        item.key = data.filename;
+        item.uploading = false;
+        log('success', `✅ 上传成功：${data.filename}`, data);
+      } else {
+        item.uploading = false;
+        item.error = data.error || '上传失败';
+        log('error', `❌ 上传失败：${f.name}`, data);
+      }
+    } catch (e) {
+      item.uploading = false;
+      item.error = e.message;
+      log('error', `💥 上传异常：${f.name} → ${e.message}`);
+    }
+    renderImageList();
+  }
+}
+
+function renderImageList() {
+  els.imageList.innerHTML = '';
+  state.uploaded.forEach((it, idx) => {
+    const card = document.createElement('div');
+    card.className = 'img-card';
+    card.innerHTML = `
+      <img src="${it.localPreview || it.url}" alt="">
+      <div class="meta">${escapeHtml(it.name)}</div>
+      <button class="remove" data-idx="${idx}" title="移除">✕</button>
+      ${it.uploading ? '<div class="uploading">上传中…</div>' : ''}
+      ${it.error ? '<div class="uploading" style="color:#fc8181;">失败</div>' : ''}
+    `;
+    els.imageList.appendChild(card);
+  });
+  els.imageList.querySelectorAll('.remove').forEach(b => {
+    b.onclick = () => {
+      const idx = +b.dataset.idx;
+      state.uploaded.splice(idx, 1);
+      renderImageList();
+    };
+  });
+}
+
+/* ========== 生成任务 ========== */
+async function startGenerate() {
+  if (!state.verified) { log('error', '⚠️ 请先验证网关'); return; }
+  if (state.polling) { log('warn', '⚠️ 已有任务在轮询'); return; }
+  const prompt = els.prompt.value.trim();
+  if (!prompt) { log('error', '⚠️ prompt 不能为空'); return; }
+  if (state.uploaded.some(i => i.uploading)) { log('warn', '⚠️ 还有图片未上传完'); return; }
+
+  const numToGenerate = parseInt(els.num.value, 10) || 1;
+
+  if (numToGenerate === 1) {
+    // 单张生成：使用原逻辑
+    await generateSingle();
+  } else {
+    // 多张生成：循环创建多个任务
+    await generateBatch(numToGenerate);
+  }
+}
+
+// 🌟 批量生成：循环创建多个独立任务
+async function generateBatch(count) {
+  const model = els.model.value;
+  const cfg = MODEL_CONFIG[model] || {};
+  const supports = (f) => (cfg.fields || []).includes(f);
+  const prompt = els.prompt.value.trim();
+  const refUrls = state.uploaded.filter(i => i.url && !i.error).map(i => i.url);
+
+  // 构建基础 payload
+  const basePayload = { prompt, model };
+  if (supports('ratio') && els.ratio.value) {
+    basePayload.ratio = els.ratio.value;
+  } else if (supports('size')) {
+    const sizeValue = cfg.useSelectForSize ? els.sizeSelect.value : els.size.value.trim();
+    if (sizeValue) {
+      basePayload.size = sizeValue.replace(/\s*\([^)]*\)\s*$/, '');
+    } else if (model === 'gpt-image-2') {
+      basePayload.size = 'auto';
+    }
+  }
+  if (refUrls.length) basePayload.referenceImageUrls = refUrls;
+  if (supports('seed') && els.seed.value) basePayload.seed = parseInt(els.seed.value, 10);
+  if (supports('watermark') && els.watermark.checked) basePayload.watermark = true;
+  if (supports('quality') && els.quality.value) basePayload.quality = els.quality.value;
+  if (supports('background') && els.background.value) basePayload.background = els.background.value;
+  if (supports('outputFormat') && els.outputFormat.value) basePayload.outputFormat = els.outputFormat.value;
+
+  log('info', `🚀 批量生成 ${count} 张图片`);
+  els.btnGenerate.disabled = true;
+  els.progressBar.style.display = 'block';
+  els.progressFill.style.width = '5%';
+  els.resultArea.classList.add('empty');
+  els.btnCancel.style.display = 'inline-block';
+
+  state.batchTasks = [];
+  state.batchTotal = count;
+  state.batchCompleted = 0;
+
+  // 依次创建任务
+  for (let i = 0; i < count; i++) {
+    log('req', `→ [${i + 1}/${count}] POST /api/nanobanana/create (${refUrls.length ? '图生图' : '文生图'} · ${model})`, basePayload);
+
+    try {
+      const res = await fetch(`${state.gateway}/api/nanobanana/create`, {
+        method: 'POST',
+        headers: {
+          'X-Username': state.username,
+          'X-Password': state.password,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(basePayload),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        log('error', `❌ [${i + 1}/${count}] 创建任务失败`);
+        continue;
+      }
+
+      const taskId = data?.data?.taskId || data?.taskId;
+      if (!taskId) {
+        log('error', `❌ [${i + 1}/${count}] 响应缺少 taskId`);
+        continue;
+      }
+
+      log('success', `🎯 [${i + 1}/${count}] 任务已创建：${taskId}`);
+      state.batchTasks.push({
+        taskId,
+        index: i + 1,
+        status: 'pending',
+        payload: JSON.parse(JSON.stringify(basePayload)),
+      });
+
+    } catch (e) {
+      log('error', `💥 [${i + 1}/${count}] 创建异常：${e.message}`);
+    }
+  }
+
+  if (state.batchTasks.length === 0) {
+    log('error', '❌ 所有任务创建失败');
+    finishPolling();
+    return;
+  }
+
+  log('info', `✅ 已创建 ${state.batchTasks.length}/${count} 个任务，开始轮询...`);
+  state.polling = true;
+  pollBatchTasks();
+}
+
+// 🌟 单张生成：原有逻辑
+async function generateSingle() {
+  if (!state.verified) { log('error', '⚠️ 请先验证网关'); return; }
+  if (state.polling) { log('warn', '⚠️ 已有任务在轮询'); return; }
+  const prompt = els.prompt.value.trim();
+  if (!prompt) { log('error', '⚠️ prompt 不能为空'); return; }
+  if (state.uploaded.some(i => i.uploading)) { log('warn', '⚠️ 还有图片未上传完'); return; }
+
+  const model = els.model.value;
+  const cfg = MODEL_CONFIG[model] || {};
+  const supports = (f) => (cfg.fields || []).includes(f);
+
+  const refUrls = state.uploaded.filter(i => i.url && !i.error).map(i => i.url);
+  const payload = { prompt, model };
+  // 仅提交当前模型支持且已填写的字段
+  if (supports('ratio') && els.ratio.value) {
+    // ratio 与 size 互斥，ratio 优先
+    payload.ratio = els.ratio.value;
+  } else if (supports('size')) {
+    // 根据当前模型的 useSelectForSize 决定从哪个元素获取值
+    const sizeValue = cfg.useSelectForSize ? els.sizeSelect.value : els.size.value.trim();
+    if (sizeValue) {
+      // 清理 size 中的标注（如 "2048x1152 (16:9)" → "2048x1152"）
+      payload.size = sizeValue.replace(/\s*\([^)]*\)\s*$/, '');
+    } else if (model === 'gpt-image-2') {
+      // 🌟 gpt-image-2 留空时默认 auto
+      payload.size = 'auto';
+    }
+  }
+  if (refUrls.length) payload.referenceImageUrls = refUrls;
+  if (supports('seed') && els.seed.value) payload.seed = parseInt(els.seed.value, 10);
+  if (supports('watermark') && els.watermark.checked) payload.watermark = true;
+  if (supports('quality') && els.quality.value) payload.quality = els.quality.value;
+  if (supports('background') && els.background.value) payload.background = els.background.value;
+  if (supports('outputFormat') && els.outputFormat.value) payload.outputFormat = els.outputFormat.value;
+
+  log('req', `→ POST /api/nanobanana/create  (${refUrls.length ? '图生图' : '文生图'} · ${model})`, payload);
+  els.btnGenerate.disabled = true;
+  els.progressBar.style.display = 'block';
+  els.progressFill.style.width = '5%';
+  els.resultArea.classList.add('empty');
+
+  // 快照当前请求，任务完成/失败时写入历史
+  state.currentRequest = {
+    id: 't_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+    createdAt: Date.now(),
+    payload: JSON.parse(JSON.stringify(payload)),
+    refImages: state.uploaded
+      .filter(i => i.url && !i.error)
+      .map(i => ({ name: i.name, url: i.url })),
+  };
+
+  try {
+    const res = await fetch(`${state.gateway}/api/nanobanana/create`, {
+      method: 'POST',
+      headers: {
+        'X-Username': state.username,
+        'X-Password': state.password,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    log('res', `← 创建任务 状态码 ${res.status}`, data);
+    if (!res.ok) {
+      log('error', `❌ 创建任务失败`);
+      recordHistory({ status: 'failed', errorMessage: (data && (data.msg || data.error || data.Message)) || `HTTP ${res.status}` });
+      finishPolling();
+      return;
+    }
+    const taskId = data?.data?.taskId || data?.taskId;
+    if (!taskId) {
+      log('error', '❌ 响应缺少 taskId');
+      recordHistory({ status: 'failed', errorMessage: '响应缺少 taskId' });
+      finishPolling();
+      return;
+    }
+    state.taskId = taskId;
+    if (state.currentRequest) state.currentRequest.taskId = taskId;
+    log('success', `🎯 任务已创建：${taskId}`);
+    els.btnCancel.style.display = 'inline-block';
+    state.polling = true;
+    pollTask();
+  } catch (e) {
+    log('error', `💥 创建异常：${e.message}`);
+    recordHistory({ status: 'failed', errorMessage: e.message });
+    finishPolling();
+  }
+}
+
+let pollCount = 0;
+const MAX_POLL = 100;  // 🌟 最大轮询次数，超过则判定超时并停止
+let transferWaitCount = 0;  // 🌟 OBS 转存等待计数
+const MAX_TRANSFER_WAIT = 10;  // 🌟 转存最多等待次数（约 30 秒）
+let batchPollCount = 0;  // 🌟 批量轮询次数计数
+async function pollTask() {
+  if (!state.polling) return;
+  // 超过最大轮询次数，判定超时
+  if (pollCount >= MAX_POLL) {
+    log('error', `⏱ 已达最大轮询次数（${MAX_POLL} 次），判定任务超时`);
+    recordHistory({ status: 'failed', errorMessage: `轮询超时（超过 ${MAX_POLL} 次仍未完成）` });
+    finishPolling();
+    return;
+  }
+  pollCount++;
+  els.progressFill.style.width = Math.min(5 + pollCount * 4, 90) + '%';
+  log('req', `→ 第 ${pollCount}/${MAX_POLL} 次轮询 taskId=${state.taskId}`);
+  try {
+    const res = await fetch(
+      `${state.gateway}/api/nanobanana/task?taskId=${encodeURIComponent(state.taskId)}`,
+      {
+        method: 'GET',
+        headers: {
+          'X-Username': state.username,
+          'X-Password': state.password
+        }
+      }
+    );
+    const data = await res.json();
+    const target = data?.data || data;
+    const status = String(target?.status || '').toLowerCase();
+    log('res', `← 状态：${status}`, data);
+
+    if (status === 'completed') {
+      // 🌟 OBS 转存进行中：继续轮询以获取转存后的 OBS 直链（最多等 10 次 ≈ 30 秒）
+      if (target.obsTransferPending === true && transferWaitCount < MAX_TRANSFER_WAIT) {
+        transferWaitCount++;
+        els.progressFill.style.width = '95%';
+        log('info', `⏳ 图片转存 OBS 中…（${transferWaitCount}/${MAX_TRANSFER_WAIT}）`);
+        state.pollTimer = setTimeout(pollTask, 3000);
+        return;
+      }
+
+      els.progressFill.style.width = '100%';
+      if (target.obsTransferPending === true) {
+        log('warn', `⚠️ OBS 转存超时，暂用上游临时链接（可能过期）`);
+      } else {
+        log('success', `🎉 任务完成`);
+      }
+      renderResult(target);
+      recordHistory({
+        status: 'completed',
+        images: (target.images || []).map(it => ({ url: it.url, size: it.size })),
+        actualAmount: target.actualAmount,
+        currency: target.currency,
+        size: target.size,
+      });
+      finishPolling();
+      return;
+    }
+    if (status === 'failed') {
+      const errMsg = target?.errorMessage || target?.message || JSON.stringify(target);
+      log('error', `❌ 任务失败：${errMsg}`, data);
+      recordHistory({ status: 'failed', errorMessage: errMsg });
+      finishPolling();
+      return;
+    }
+    // pending / processing / running → 继续轮询
+    state.pollTimer = setTimeout(pollTask, 3000);
+  } catch (e) {
+    log('error', `💥 轮询异常：${e.message}`);
+    state.pollTimer = setTimeout(pollTask, 5000);
+  }
+}
+
+// 🌟 批量任务轮询
+async function pollBatchTasks() {
+  if (!state.polling) return;
+
+  const pending = state.batchTasks.filter(t => t.status === 'pending' || t.status === 'processing' || t.status === 'running');
+  if (pending.length === 0) {
+    // 所有任务都完成了
+    log('success', `🎉 批量任务全部完成（${state.batchCompleted}/${state.batchTotal}）`);
+    finishBatchPolling();
+    return;
+  }
+
+  // 超过最大轮询次数，把仍未完成的任务标记为超时失败
+  batchPollCount++;
+  if (batchPollCount >= MAX_POLL) {
+    pending.forEach(t => {
+      t.status = 'failed';
+      t.error = `轮询超时（超过 ${MAX_POLL} 次）`;
+      log('error', `⏱ [${t.index}/${state.batchTotal}] 轮询超时`);
+    });
+    finishBatchPolling();
+    return;
+  }
+
+  // 并行查询所有待处理任务
+  const promises = pending.map(task => pollSingleBatchTask(task));
+  await Promise.all(promises);
+
+  // 更新进度条
+  const progress = Math.floor((state.batchCompleted / state.batchTotal) * 100);
+  els.progressFill.style.width = Math.min(progress, 95) + '%';
+
+  // 继续轮询
+  state.pollTimer = setTimeout(pollBatchTasks, 3000);
+}
+
+// 🌟 查询单个批量任务
+async function pollSingleBatchTask(task) {
+  try {
+    const res = await fetch(
+      `${state.gateway}/api/nanobanana/task?taskId=${encodeURIComponent(task.taskId)}`,
+      {
+        method: 'GET',
+        headers: {
+          'X-Username': state.username,
+          'X-Password': state.password
+        }
+      }
+    );
+
+    const data = await res.json();
+    const target = data?.data || data;
+    const status = String(target?.status || '').toLowerCase();
+
+    if (status === 'completed') {
+      // 🌟 OBS 转存进行中：等待转存完成再定稿（最多等 MAX_TRANSFER_WAIT 轮）
+      if (target.obsTransferPending === true && (task.transferWait || 0) < MAX_TRANSFER_WAIT) {
+        task.transferWait = (task.transferWait || 0) + 1;
+        task.status = 'processing';  // 保持轮询
+        log('info', `⏳ [${task.index}/${state.batchTotal}] 转存 OBS 中…（${task.transferWait}/${MAX_TRANSFER_WAIT}）`);
+        return;
+      }
+
+      if (task.status !== 'completed') {
+        state.batchCompleted++;
+        task.status = 'completed';
+        task.result = target;
+        if (target.obsTransferPending === true) {
+          log('warn', `⚠️ [${task.index}/${state.batchTotal}] OBS 转存超时，暂用上游临时链接`);
+        } else {
+          log('success', `✅ [${task.index}/${state.batchTotal}] 任务完成：${task.taskId}`);
+        }
+
+        // 立即渲染这张图片
+        appendBatchResult(target);
+      }
+    } else if (status === 'failed') {
+      if (task.status !== 'failed') {
+        state.batchCompleted++;
+        task.status = 'failed';
+        task.error = target?.errorMessage || '任务失败';
+        log('error', `❌ [${task.index}/${state.batchTotal}] 任务失败：${task.error}`);
+      }
+    } else {
+      // pending / processing / running
+      task.status = status;
+    }
+  } catch (e) {
+    log('error', `💥 [${task.index}/${state.batchTotal}] 查询异常：${e.message}`);
+  }
+}
+
+// 🌟 追加批量生成的单个结果到结果区（与 renderResult 的渲染方式保持一致）
+function appendBatchResult(target) {
+  const imgs = target?.images || [];
+  if (imgs.length === 0) return;
+
+  // 首次渲染时初始化结果区
+  if (els.resultArea.classList.contains('empty')) {
+    els.resultArea.classList.remove('empty');
+    els.resultImages.innerHTML = '';
+  }
+
+  // 追加图片（与 renderResult 相同：直接创建 img，点击弹窗预览）
+  imgs.forEach(it => {
+    const img = document.createElement('img');
+    img.src = it.url;
+    img.onclick = () => { els.modalImg.src = it.url; els.modal.classList.add('show'); };
+    els.resultImages.appendChild(img);
+  });
+
+  // 更新元信息
+  els.resultMeta.textContent = `批量生成中... (${state.batchCompleted}/${state.batchTotal})`;
+}
+
+// 🌟 完成批量轮询
+function finishBatchPolling() {
+  state.polling = false;
+  if (state.pollTimer) clearTimeout(state.pollTimer);
+  state.pollTimer = null;
+
+  els.progressFill.style.width = '100%';
+  els.btnGenerate.disabled = !state.verified;
+  els.btnCancel.style.display = 'none';
+
+  // 更新最终元信息
+  const successCount = state.batchTasks.filter(t => t.status === 'completed').length;
+  const failCount = state.batchTasks.filter(t => t.status === 'failed').length;
+  els.resultMeta.textContent = `批量生成完成：成功 ${successCount} 张，失败 ${failCount} 张`;
+
+  // 记录历史
+  const allImages = state.batchTasks
+    .filter(t => t.status === 'completed' && t.result?.images)
+    .flatMap(t => t.result.images.map(it => ({ url: it.url, size: it.size })));
+
+  if (allImages.length > 0) {
+    recordHistory({
+      status: 'completed',
+      images: allImages,
+      batchCount: state.batchTotal,
+    });
+  }
+
+  setTimeout(() => {
+    els.progressBar.style.display = 'none';
+    els.progressFill.style.width = '0';
+  }, 1200);
+
+  // 清理批量状态
+  state.batchTasks = [];
+  state.batchTotal = 0;
+  state.batchCompleted = 0;
+  batchPollCount = 0;
+}
+
+function finishPolling() {
+  state.polling = false;
+  if (state.pollTimer) clearTimeout(state.pollTimer);
+  state.pollTimer = null;
+  pollCount = 0;
+  transferWaitCount = 0;
+  els.btnGenerate.disabled = !state.verified;
+  els.btnCancel.style.display = 'none';
+  setTimeout(() => { els.progressBar.style.display = 'none'; els.progressFill.style.width = '0'; }, 1200);
+}
+
+function cancelPolling() {
+  if (!state.polling) return;
+  log('warn', '⏹ 用户取消轮询');
+
+  // 清理批量状态
+  if (state.batchTasks && state.batchTasks.length > 0) {
+    state.batchTasks = [];
+    state.batchTotal = 0;
+    state.batchCompleted = 0;
+    batchPollCount = 0;
+  }
+
+  finishPolling();
+}
+
+function renderResult(target) {
+  const imgs = target?.images || [];
+  els.resultArea.classList.remove('empty');
+  els.resultMeta.textContent =
+    `taskId: ${target.taskId || '-'} · size: ${target.size || '-'} · ` +
+    `cost: ${target.actualAmount ?? '-'} ${target.currency || ''}`;
+  els.resultImages.innerHTML = '';
+  imgs.forEach(it => {
+    const img = document.createElement('img');
+    img.src = it.url;
+    img.onclick = () => { els.modalImg.src = it.url; els.modal.classList.add('show'); };
+    els.resultImages.appendChild(img);
+  });
+}
+
+/* ========== 历史记录（localStorage 多槽 + 导入导出） ========== */
+const HIST_PREFIX = 'nanobanana_history_';
+const HIST_SLOT_PREF_KEY = 'nanobanana_history_slot';
+const HIST_MAX = 200;  // 单槽最多保留条数
+
+function histKey(slot) { return HIST_PREFIX + (slot || 'default'); }
+
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(histKey(state.storageSlot));
+    state.history = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(state.history)) state.history = [];
+  } catch (e) {
+    state.history = [];
+    log('error', `历史记录读取失败：${e.message}`);
+  }
+  updateHistoryCount();
+}
+
+function saveHistory() {
+  try {
+    localStorage.setItem(histKey(state.storageSlot), JSON.stringify(state.history));
+  } catch (e) {
+    log('error', `历史记录保存失败（可能超出 localStorage 配额）：${e.message}`);
+  }
+  updateHistoryCount();
+}
+
+function updateHistoryCount() {
+  els.historyCount.textContent = state.history.length ? `(${state.history.length})` : '';
+}
+
+/* 把当前请求 + 结果合并写入历史 */
+function recordHistory(result) {
+  if (!state.currentRequest) return;
+  const entry = {
+    ...state.currentRequest,
+    finishedAt: Date.now(),
+    result,
+  };
+  state.history.unshift(entry);
+  if (state.history.length > HIST_MAX) state.history.length = HIST_MAX;
+  saveHistory();
+  if (els.drawer.classList.contains('show')) renderHistory();
+  state.currentRequest = null;
+}
+
+function fmtTime(ts) {
+  const d = new Date(ts);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function renderHistory() {
+  els.historyList.innerHTML = '';
+  state.history.forEach((h, idx) => {
+    const card = document.createElement('div');
+    const failed = h.result?.status === 'failed';
+    card.className = 'history-item' + (failed ? ' failed' : '');
+    const p = h.payload || {};
+    const badges = [];
+    if (p.model) badges.push(p.model);
+    if (p.size) badges.push('size:' + p.size);
+    if (p.ratio) badges.push('ratio:' + p.ratio);
+    if (p.seed != null) badges.push('seed:' + p.seed);
+    if (p.quality) badges.push('quality:' + p.quality);
+    if (p.background) badges.push('bg:' + p.background);
+    if (p.outputFormat) badges.push('fmt:' + p.outputFormat);
+    if (p.watermark) badges.push('💧水印');
+    if ((h.refImages || []).length) badges.push('图生图×' + h.refImages.length);
+    if (failed) badges.push('失败');
+
+    const refThumbs = (h.refImages || []).map(r =>
+      `<span class="ref-tag"><img src="${escapeHtml(r.url)}" title="参考图：${escapeHtml(r.name)}" data-zoom="${escapeHtml(r.url)}"></span>`
+    ).join('');
+    const outThumbs = (h.result?.images || []).map(im =>
+      `<img src="${escapeHtml(im.url)}" title="${escapeHtml(im.size || '')}" data-zoom="${escapeHtml(im.url)}">`
+    ).join('');
+
+    const errBlock = failed && h.result?.errorMessage
+      ? `<div class="err-msg">${escapeHtml(h.result.errorMessage)}</div>` : '';
+
+    card.innerHTML = `
+      <div class="row1">
+        <span class="ts">${fmtTime(h.createdAt)}</span>
+        <div class="badges">${badges.map(b => `<span class="badge${failed && b==='失败' ? ' failed' : ''}">${escapeHtml(b)}</span>`).join('')}</div>
+      </div>
+      <div class="prompt" title="${escapeHtml(p.prompt || '')}">${escapeHtml(p.prompt || '(无 prompt)')}</div>
+      ${errBlock}
+      ${refThumbs || outThumbs ? `<div class="thumbs">${refThumbs}${outThumbs}</div>` : ''}
+      <div class="actions">
+        <button data-act="apply" data-idx="${idx}">📋 复制到面板</button>
+        <button class="ghost" data-act="copyPrompt" data-idx="${idx}">复制 prompt</button>
+        <button class="del" data-act="del" data-idx="${idx}">删除</button>
+      </div>
+    `;
+    els.historyList.appendChild(card);
+  });
+
+  // 缩略图点击放大
+  els.historyList.querySelectorAll('img[data-zoom]').forEach(img => {
+    img.onclick = () => { els.modalImg.src = img.dataset.zoom; els.modal.classList.add('show'); };
+  });
+  // 按钮事件代理
+  els.historyList.querySelectorAll('button[data-act]').forEach(b => {
+    b.onclick = () => onHistoryAction(b.dataset.act, +b.dataset.idx);
+  });
+}
+
+function onHistoryAction(act, idx) {
+  const h = state.history[idx];
+  if (!h) return;
+  if (act === 'apply') applyHistory(h);
+  else if (act === 'copyPrompt') {
+    navigator.clipboard.writeText(h.payload?.prompt || '').then(
+      () => log('success', '📋 prompt 已复制到剪贴板'),
+      () => log('error', '剪贴板写入失败')
+    );
+  } else if (act === 'del') {
+    if (!confirm('删除这条历史记录？')) return;
+    state.history.splice(idx, 1);
+    saveHistory();
+    renderHistory();
+  }
+}
+
+/* 把历史记录复制回当前面板（生成相似图片） */
+function applyHistory(h) {
+  const p = h.payload || {};
+  els.prompt.value = p.prompt || '';
+  if (p.model) els.model.value = p.model;
+  applyModelConfig();  // 先按模型刷新字段可见性与候选项，再回填值
+  els.size.value = p.size || '';
+  els.ratio.value = p.ratio || '';
+  els.seed.value = p.seed != null ? p.seed : '';
+  els.watermark.checked = !!p.watermark;
+  els.quality.value = p.quality || '';
+  els.background.value = p.background || '';
+  els.outputFormat.value = p.outputFormat || '';
+
+  // 把参考图直接以 OBS 直链形式塞回 uploaded（不再走二次上传）
+  state.uploaded = (h.refImages || []).map(r => ({
+    name: r.name || 'history-ref',
+    url: r.url,
+    key: '',
+    uploading: false,
+    localPreview: r.url,
+    _id: Math.random().toString(36).slice(2),
+  }));
+  renderImageList();
+
+  closeDrawer();
+  log('success', `📋 已从历史 ${fmtTime(h.createdAt)} 复制配置${state.uploaded.length ? '（含 ' + state.uploaded.length + ' 张参考图）' : ''}`);
+  els.prompt.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+/* 抽屉开关 */
+function openDrawer() {
+  loadHistory();  // 每次打开重新加载，避免多标签页不同步
+  renderHistory();
+  els.drawer.classList.add('show');
+  els.drawerOverlay.classList.add('show');
+  els.storageKey.value = state.storageSlot;
+}
+function closeDrawer() {
+  els.drawer.classList.remove('show');
+  els.drawerOverlay.classList.remove('show');
+}
+
+/* 切换存储槽 */
+function switchSlot() {
+  const v = els.storageKey.value.trim() || 'default';
+  if (v === state.storageSlot) { log('info', '存储槽未变化'); return; }
+  state.storageSlot = v;
+  try { localStorage.setItem(HIST_SLOT_PREF_KEY, v); } catch (e) {}
+  loadHistory();
+  renderHistory();
+  log('info', `已切换到存储槽：${v}（共 ${state.history.length} 条）`);
+}
+
+/* 导出 / 导入 / 清空 */
+function exportHistory() {
+  const blob = new Blob([JSON.stringify({
+    slot: state.storageSlot,
+    exportedAt: new Date().toISOString(),
+    count: state.history.length,
+    items: state.history,
+  }, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `nanobanana-history-${state.storageSlot}-${Date.now()}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  log('success', `⬇ 已导出 ${state.history.length} 条历史到 JSON 文件`);
+}
+
+function importHistory(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const obj = JSON.parse(e.target.result);
+      const items = Array.isArray(obj) ? obj : (obj.items || []);
+      if (!Array.isArray(items)) throw new Error('JSON 结构非法');
+      const merge = confirm(`导入 ${items.length} 条历史。\n确定 = 合并到当前槽（去重保留最新）\n取消 = 替换当前槽全部内容`);
+      if (merge) {
+        const seen = new Set(state.history.map(h => h.id));
+        for (const it of items) if (it && !seen.has(it.id)) state.history.push(it);
+        state.history.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        if (state.history.length > HIST_MAX) state.history.length = HIST_MAX;
+      } else {
+        state.history = items.slice(0, HIST_MAX);
+      }
+      saveHistory();
+      renderHistory();
+      log('success', `⬆ 导入完成，当前槽现有 ${state.history.length} 条`);
+    } catch (err) {
+      log('error', `导入失败：${err.message}`);
+      alert('导入失败：' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function clearHistory() {
+  if (!state.history.length) { log('info', '当前槽已经是空的'); return; }
+  if (!confirm(`确定清空存储槽「${state.storageSlot}」的全部 ${state.history.length} 条历史？此操作不可撤销。`)) return;
+  state.history = [];
+  saveHistory();
+  renderHistory();
+  log('warn', `🗑 已清空存储槽：${state.storageSlot}`);
+}
+
+/* ========== 事件绑定 ========== */
+els.btnVerify.onclick = verifyGateway;
+els.btnGenerate.onclick = startGenerate;
+els.btnCancel.onclick = cancelPolling;
+els.btnClearLog.onclick = () => { els.logWindow.innerHTML = ''; };
+els.model.onchange = applyModelConfig;  // 切换模型时刷新参数字段
+els.closeAnnouncement.onclick = () => els.announcement.classList.remove('show');  // 关闭公告
+els.btnClearSize.onclick = () => { els.size.value = ''; els.sizeSelect.value = ''; };  // 清空尺寸
+
+els.uploadZone.onclick = () => els.fileInput.click();
+els.fileInput.onchange = (e) => { uploadFiles(e.target.files); e.target.value = ''; };
+['dragover','dragenter'].forEach(ev =>
+  els.uploadZone.addEventListener(ev, e => { e.preventDefault(); els.uploadZone.classList.add('dragover'); }));
+['dragleave','drop'].forEach(ev =>
+  els.uploadZone.addEventListener(ev, e => { e.preventDefault(); els.uploadZone.classList.remove('dragover'); }));
+els.uploadZone.addEventListener('drop', e => uploadFiles(e.dataTransfer.files));
+
+document.querySelectorAll('.log-header .filters button').forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll('.log-header .filters button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    state.logFilter = b.dataset.f;
+    document.querySelectorAll('.log-line').forEach(l => {
+      l.style.display = (state.logFilter === 'all' || l.dataset.level === state.logFilter) ? '' : 'none';
+    });
+  };
+});
+
+els.modal.onclick = () => els.modal.classList.remove('show');
+
+// 历史记录事件
+els.btnHistory.onclick = openDrawer;
+els.btnCloseDrawer.onclick = closeDrawer;
+els.drawerOverlay.onclick = closeDrawer;
+els.btnSwitchSlot.onclick = switchSlot;
+els.storageKey.addEventListener('keydown', e => { if (e.key === 'Enter') switchSlot(); });
+els.btnExportHistory.onclick = exportHistory;
+els.btnImportHistory.onclick = () => els.importFile.click();
+els.importFile.onchange = e => {
+  if (e.target.files[0]) importHistory(e.target.files[0]);
+  e.target.value = '';
+};
+els.btnClearHistory.onclick = clearHistory;
+
+/* ========== 初始化 ========== */
+// 先加载 localStorage 配置
+loadCfg();
+
+// 🌟 然后用配置区的网关地址覆盖（如果已配置）
+if (typeof GATEWAY_URL !== 'undefined' && GATEWAY_URL) {
+  state.gateway = GATEWAY_URL;
+  els.gw.value = GATEWAY_URL;
+} else if (!els.gw.value) {
+  // 如果 localStorage 和配置区都没有，兜底使用当前域名
+  state.gateway = window.location.origin;
+  els.gw.value = state.gateway;
+}
+
+// 应用默认账号密码（如果配置了且 localStorage 没有）
+if (typeof DEFAULT_USERNAME !== 'undefined' && DEFAULT_USERNAME && !els.username.value) {
+  els.username.value = DEFAULT_USERNAME;
+  state.username = DEFAULT_USERNAME;
+}
+if (typeof DEFAULT_PASSWORD !== 'undefined' && DEFAULT_PASSWORD && !els.password.value) {
+  els.password.value = DEFAULT_PASSWORD;
+  state.password = DEFAULT_PASSWORD;
+}
+
+applyModelConfig();  // 按默认模型初始化参数字段
+// 恢复上次使用的存储槽
+try {
+  const lastSlot = localStorage.getItem(HIST_SLOT_PREF_KEY);
+  if (lastSlot) state.storageSlot = lastSlot;
+} catch (e) {}
+els.storageKey.value = state.storageSlot;
+loadHistory();
+loadAnnouncement();  // 加载公告栏
+log('info', '👋 控制台已就绪。请填写账号密码并点击「验证连接」，然后选择模型开始生成。');
+</script>
+
+</body>
+</html>
